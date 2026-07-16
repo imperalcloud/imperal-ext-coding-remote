@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.1.0", capabilities=[],
+    "coding-remote", version="1.2.0", capabilities=[],
     display_name="Coding Remote",
     description=(
         "Control your terminal Webbee Code session remotely — mirror it to "
@@ -36,8 +36,9 @@ chat = ChatExtension(
     "tool_coding_remote_chat",
     description=(
         "Remote control for the terminal Webbee Code session: check whether "
-        "it is live, route it to Telegram/panel/both/off, and send it an "
-        "instruction while it keeps running on your machine."
+        "it is live, route it to Telegram/panel/both/off, switch its mode "
+        "(default/plan/autopilot), and send it an instruction while it keeps "
+        "running on your machine."
     ),
     system_prompt=(
         "Coding Remote module — remote control for the user's terminal "
@@ -54,7 +55,12 @@ chat = ChatExtension(
         "conversation survive, only the current run is cancelled — use it "
         "when the user asks to stop/cancel/interrupt what the coding session "
         "is doing right now; if nothing is running it reports an honest "
-        "no-op."
+        "no-op. set_coding_mode switches the LIVE session's consent mode — "
+        "'default' asks before risky actions, 'plan' is read-only planning, "
+        "'autopilot' auto-approves (the terminal asks its local user to "
+        "confirm an autopilot switch; downgrades apply right away). It is a "
+        "different thing from set_mode (routing) — never mix the two — and "
+        "it only works while a session is active."
     ),
 )
 

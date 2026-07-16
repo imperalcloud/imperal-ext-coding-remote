@@ -22,12 +22,21 @@ class SendParams(BaseModel):
     text: str = Field(description="the instruction to run in the coding session")
 
 
+class CodingModeParams(BaseModel):
+    """Set the terminal coding session's mode. mode: default | plan | autopilot."""
+    mode: str = Field(description="default | plan | autopilot")
+
+
 _MODES = {
     "tg": {"enabled": True, "mirror": ["telegram"], "steer": ["telegram"]},
     "panel": {"enabled": True, "mirror": ["panel"], "steer": []},
     "both": {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram"]},
     "off": {"enabled": False, "mirror": [], "steer": []},
 }
+
+# Coding-session CONSENT modes (set_coding_mode) — a DIFFERENT axis from the
+# _MODES routing vocabulary above (set_mode = mirror/steer routing).
+_CODING_MODES = ("default", "plan", "autopilot")
 
 # Origin-honest steer (v2): core surface vocab the gateway validates against.
 # "panel" is the ext/panel-side alias for the core "web-panel" surface.
@@ -168,4 +177,52 @@ async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
         return ActionResult.error(f"Failed to stop the coding session: {_safe_err(e)}")
 
 
-__all__ = ["fn_status", "fn_set", "fn_send", "fn_stop"]
+@chat.function("set_coding_mode", action_type="write",
+    description="Set the terminal coding session's mode: default (ask before risky actions), plan (read-only planning), or autopilot (auto-approve — the terminal will ask you to confirm the switch).",
+    data_model=CodingRemote)
+async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
+    """Switch the acting user's live coding session between consent modes.
+
+    Always targets ``ctx.user.imperal_id`` — never a caller-supplied user.
+    ``mode`` must be one of ``default`` (the terminal asks before risky
+    actions), ``plan`` (read-only planning — consent-gated actions are
+    refused), or ``autopilot`` (auto-approve every consent). This is the
+    session's CONSENT policy — a different axis from :func:`fn_set`
+    (``set_mode``), which routes mirror/steer surfaces; never conflate the two.
+
+    The gateway gates ownership + remote-control enabled server-side;
+    ``autopilot`` additionally requires the origin surface in the steer
+    allowlist, and the terminal asks its LOCAL user to confirm before
+    autopilot takes effect — a remote surface can never silently disarm the
+    consent prompt (downgrades to default/plan apply without a confirm).
+    Refusals (e.g. no active session, surface not allowed) are surfaced
+    as-is, with no internal URL/host ever leaked.
+
+    Origin-honest (v2): the acting turn's surface (normalized, see
+    :func:`_turn_surface`) rides along when readable so the gateway can
+    check the autopilot allowlist and tag the flip's true origin; when not
+    readable the field is omitted and the gateway applies its default.
+    """
+    try:
+        uid = _user_id(ctx)
+        mode = params.mode.strip().lower()
+        if mode not in _CODING_MODES:
+            return ActionResult.error("mode must be one of: default, plan, autopilot")
+        body: dict = {"mode": mode}
+        surface = _turn_surface(ctx)
+        if surface:
+            body["surface"] = surface
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/mode", body)
+        if err:
+            return ActionResult.error(f"Not set: {err}")
+        summary = f"coding mode → {mode}"
+        if mode == "autopilot":
+            summary += " (autopilot asks the terminal to confirm)"
+        return ActionResult.success(
+            data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
+            summary=summary)
+    except Exception as e:
+        return ActionResult.error(f"Failed to set the coding mode: {_safe_err(e)}")
+
+
+__all__ = ["fn_status", "fn_set", "fn_send", "fn_stop", "fn_coding_mode"]

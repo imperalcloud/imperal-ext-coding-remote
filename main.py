@@ -1,4 +1,4 @@
-"""Coding Remote v1.1.0 · terminal Webbee Code remote-control tools — system extension."""
+"""Coding Remote v1.2.0 · terminal Webbee Code remote-control tools — system extension."""
 from __future__ import annotations
 
 import sys, os

@@ -19,12 +19,19 @@ session from chat or the panel — while it keeps running on your machine.
 - `stop_session` (write) — stop the running turn, like pressing Esc in
   the terminal. Cancels the current run only; the session and its
   conversation survive. An idle session is an honest no-op error.
+- `set_coding_mode` (write) — switch the live session's consent mode:
+  `default` (ask before risky actions), `plan` (read-only planning), or
+  `autopilot` (auto-approve — the terminal asks its local user to confirm
+  the switch; downgrades apply right away). Distinct from `set_mode`
+  (routing). Ownership and remote-control state are gated server-side;
+  autopilot also requires the origin surface in the steer allowlist.
 
 ## Panel
 
 A control page (left slot) showing live session status, a Stop button
-(remote Esc), route buttons (Telegram/Panel/Both/Off), and a send box —
-this extension IS the control surface, so it stays visible in the sidebar.
+(remote Esc), route buttons (Telegram/Panel/Both/Off), coding-mode buttons
+(Default/Plan/Autopilot), and a send box — this extension IS the control
+surface, so it stays visible in the sidebar.
 
 ## Access
 

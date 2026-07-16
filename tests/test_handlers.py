@@ -1,4 +1,5 @@
-"""Tests for coding-remote get_status / set_mode / send_instruction.
+"""Tests for coding-remote get_status / set_mode / send_instruction /
+stop_session / set_coding_mode.
 
 Gateway is mocked with the gw_mock fixture (httpx.MockTransport under the
 hood, see tests/conftest.py) — no real network, no respx. Every test drives
@@ -21,6 +22,7 @@ UID = "imp_u_TEST"
 STATUS_PATH = f"/v1/internal/coding-remote/{UID}"
 STEER_PATH = f"/v1/internal/coding-remote/{UID}/steer"
 STOP_PATH = f"/v1/internal/coding-remote/{UID}/stop"
+MODE_PATH = f"/v1/internal/coding-remote/{UID}/mode"
 
 IDLE_STATE = {"user_id": UID, "session_id": None, "active": False,
               "state": {"enabled": False, "mirror": [], "steer": []}}
@@ -324,6 +326,163 @@ async def test_stop_session_gateway_unreachable_has_no_internal_url(make_ctx, gw
     assert "https://" not in res.error
 
 
+# ─── set_coding_mode (consent mode: default | plan | autopilot) ───────── #
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_plan_posts_mode_and_reports_ok(make_ctx, gw_mock):
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": f"coding-{UID}-abc123"})
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="plan"))
+
+    assert res.status == "success"
+    assert gw_mock.was_called("POST", MODE_PATH)
+    body = json.loads(gw_mock.last_request("POST", MODE_PATH).content)
+    assert body == {"mode": "plan"}
+    assert "coding mode → plan" in res.summary
+    assert res.data.session_id == f"coding-{UID}-abc123"
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_autopilot_summary_notes_terminal_confirm(make_ctx, gw_mock):
+    """Autopilot never applies silently — the summary must say the terminal
+    will ask its local user to confirm, so the narrator relays that FACT."""
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="autopilot"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", MODE_PATH).content)
+    assert body == {"mode": "autopilot"}
+    assert "coding mode → autopilot" in res.summary
+    assert "asks the terminal to confirm" in res.summary
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_downgrade_summary_has_no_confirm_note(make_ctx, gw_mock):
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="default"))
+
+    assert res.status == "success"
+    assert "coding mode → default" in res.summary
+    assert "confirm" not in res.summary
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_case_and_whitespace_insensitive(make_ctx, gw_mock):
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="  Plan  "))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", MODE_PATH).content)
+    assert body == {"mode": "plan"}
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_invalid_mode_errors_before_any_write(make_ctx, gw_mock):
+    # No POST route registered — an unknown mode must be rejected before any write.
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="yolo"))
+
+    assert res.status == "error"
+    assert "mode must be one of: default, plan, autopilot" in res.error
+    assert not gw_mock.was_called("POST", MODE_PATH)
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_rejects_routing_vocab(make_ctx, gw_mock):
+    """The routing modes (tg/panel/both/off) belong to set_mode — the consent
+    tool must refuse them, never silently cross the two vocabularies."""
+    for routing_mode in ("tg", "panel", "both", "off"):
+        res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode=routing_mode))
+        assert res.status == "error", routing_mode
+    assert not gw_mock.was_called("POST", MODE_PATH)
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_uses_ctx_user_id_only_never_a_param(make_ctx, gw_mock):
+    other_uid = "imp_u_OTHER"
+    gw_mock.post(f"/v1/internal/coding-remote/{other_uid}/mode",
+                 json={"ok": True, "session_id": f"coding-{other_uid}-xyz"})
+
+    res = await h.fn_coding_mode(make_ctx(imperal_id=other_uid), h.CodingModeParams(mode="plan"))
+    assert res.status == "success"
+    assert gw_mock.was_called("POST", f"/v1/internal/coding-remote/{other_uid}/mode")
+    assert not gw_mock.was_called("POST", MODE_PATH)
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_no_active_session_409_is_clean_error(make_ctx, gw_mock):
+    gw_mock.post(MODE_PATH, json={"detail": "no active coding session"}, status=409)
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="plan"))
+
+    assert res.status == "error"
+    assert "409" in res.error
+    assert "no active coding session" in res.error
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_autopilot_not_allowed_422_reason_surfaced(make_ctx, gw_mock):
+    """Autopilot from a surface outside the steer allowlist — the gateway's
+    refusal reason is surfaced as-is (honest refuse), no URL/IP leaked."""
+    gw_mock.post(MODE_PATH,
+                 json={"detail": "autopilot requires the surface in the steer allowlist"},
+                 status=422)
+
+    res = await h.fn_coding_mode(make_ctx(surface="telegram"), h.CodingModeParams(mode="autopilot"))
+
+    assert res.status == "error"
+    assert "422" in res.error
+    assert "steer allowlist" in res.error
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_gateway_unreachable_has_no_internal_url(make_ctx, gw_mock):
+    gw_mock.error("POST", MODE_PATH, httpx.ConnectError("boom"))
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="plan"))
+
+    assert res.status == "error"
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_passes_surface_from_ctx_attr(make_ctx, gw_mock):
+    """Origin rides along when readable — the gateway needs it for the
+    autopilot steer-allowlist check + origin-honest tagging."""
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_coding_mode(make_ctx(surface="telegram"), h.CodingModeParams(mode="autopilot"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", MODE_PATH).content)
+    assert body == {"mode": "autopilot", "surface": "telegram"}
+
+
+@pytest.mark.asyncio
+async def test_set_coding_mode_omits_surface_when_ctx_does_not_expose_it(make_ctx, gw_mock):
+    gw_mock.post(MODE_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_coding_mode(make_ctx(), h.CodingModeParams(mode="plan"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", MODE_PATH).content)
+    assert "surface" not in body
+
+
+def test_coding_mode_vocab_is_exactly_default_plan_autopilot():
+    assert h._CODING_MODES == ("default", "plan", "autopilot")
+
+
 # ─── 409 no-session: clean ActionResult.error, NO internal URL ───────── #
 
 @pytest.mark.asyncio
@@ -400,3 +559,4 @@ def test_params_models_have_no_user_id_field():
     assert "user_id" not in h.EmptyParams.model_fields
     assert "user_id" not in h.SetParams.model_fields
     assert "user_id" not in h.SendParams.model_fields
+    assert "user_id" not in h.CodingModeParams.model_fields
