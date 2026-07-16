@@ -20,6 +20,7 @@ UID = "imp_u_TEST"
 
 STATUS_PATH = f"/v1/internal/coding-remote/{UID}"
 STEER_PATH = f"/v1/internal/coding-remote/{UID}/steer"
+STOP_PATH = f"/v1/internal/coding-remote/{UID}/stop"
 
 IDLE_STATE = {"user_id": UID, "session_id": None, "active": False,
               "state": {"enabled": False, "mirror": [], "steer": []}}
@@ -179,6 +180,148 @@ async def test_send_instruction_uses_ctx_user_id_only_never_a_param(make_ctx, gw
     assert res.status == "success"
     assert gw_mock.was_called("POST", f"/v1/internal/coding-remote/{other_uid}/steer")
     assert not gw_mock.was_called("POST", STEER_PATH)
+
+
+# ─── send_instruction origin honesty (v2): surface in the steer body ─── #
+
+@pytest.mark.asyncio
+async def test_send_instruction_omits_surface_when_ctx_does_not_expose_it(make_ctx, gw_mock):
+    """SDK Context 5.9.x exposes no turn surface — the field is OMITTED and the
+    gateway applies its default (web-panel). Never a fabricated value."""
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(), h.SendParams(text="run the tests"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert body == {"text": "run the tests"}
+    assert "surface" not in body
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_passes_surface_from_ctx_attr(make_ctx, gw_mock):
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(surface="telegram"), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert body["surface"] == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_reads_surface_from_metadata_fallback(make_ctx, gw_mock):
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(metadata={"surface": "discord"}), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert body["surface"] == "discord"
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_normalizes_panel_to_web_panel(make_ctx, gw_mock):
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(surface="panel"), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert body["surface"] == "web-panel"
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_surface_case_and_whitespace_insensitive(make_ctx, gw_mock):
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(surface="  Telegram "), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert body["surface"] == "telegram"
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_unknown_surface_is_omitted_not_guessed(make_ctx, gw_mock):
+    """Unknown value -> OMIT (gateway defaults web-panel); never send junk the
+    endpoint would 422, never silently coerce to a wrong origin."""
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(surface="smoke-signal"), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert "surface" not in body
+
+
+@pytest.mark.asyncio
+async def test_send_instruction_non_string_surface_is_omitted(make_ctx, gw_mock):
+    gw_mock.post(STEER_PATH, json={"ok": True, "session_id": "s"})
+
+    res = await h.fn_send(make_ctx(surface=42), h.SendParams(text="hi"))
+
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("POST", STEER_PATH).content)
+    assert "surface" not in body
+
+
+def test_turn_surface_vocab_is_exactly_the_core_four():
+    assert h._SURFACES == {"telegram", "web-panel", "discord", "api"}
+
+
+# ─── stop_session ─────────────────────────────────────────────────────── #
+
+@pytest.mark.asyncio
+async def test_stop_session_posts_stop_and_reports_ok(make_ctx, gw_mock):
+    gw_mock.post(STOP_PATH, json={"ok": True, "session_id": f"coding-{UID}-abc123"})
+
+    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+
+    assert res.status == "success"
+    assert gw_mock.was_called("POST", STOP_PATH)
+    body = json.loads(gw_mock.last_request("POST", STOP_PATH).content)
+    assert body == {}
+    assert "stop sent to your coding session" in res.summary
+    assert res.data.session_id == f"coding-{UID}-abc123"
+
+
+@pytest.mark.asyncio
+async def test_stop_session_uses_ctx_user_id_only_never_a_param(make_ctx, gw_mock):
+    other_uid = "imp_u_OTHER"
+    gw_mock.post(f"/v1/internal/coding-remote/{other_uid}/stop", json={"ok": True})
+
+    res = await h.fn_stop(make_ctx(imperal_id=other_uid), h.EmptyParams())
+    assert res.status == "success"
+    assert gw_mock.was_called("POST", f"/v1/internal/coding-remote/{other_uid}/stop")
+    assert not gw_mock.was_called("POST", STOP_PATH)
+
+
+@pytest.mark.asyncio
+async def test_stop_session_idle_409_is_honest_clean_error(make_ctx, gw_mock):
+    """No running session -> honest no-op error, gateway reason surfaced as-is."""
+    gw_mock.post(STOP_PATH, json={"detail": "no running coding turn"}, status=409)
+
+    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+
+    assert res.status == "error"
+    assert "409" in res.error
+    assert "no running coding turn" in res.error
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
+
+
+@pytest.mark.asyncio
+async def test_stop_session_gateway_unreachable_has_no_internal_url(make_ctx, gw_mock):
+    gw_mock.error("POST", STOP_PATH, httpx.ConnectError("boom"))
+
+    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+
+    assert res.status == "error"
+    assert "104.224" not in res.error
+    assert "http://" not in res.error
+    assert "https://" not in res.error
 
 
 # ─── 409 no-session: clean ActionResult.error, NO internal URL ───────── #

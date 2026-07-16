@@ -3,11 +3,11 @@ session.
 
 Unlike notifications/web-search (informational-only, hidden from the
 sidebar), this extension IS the control surface: it renders the live
-status plus write controls (route buttons via ui.Call, a send box via
-ui.Form) that call straight into the same get_status/set_mode/send_instruction
-handlers the chat tools use — both actions bypass chat and invoke the
-@chat.function directly, so there is exactly one code path for every write,
-chat or panel.
+status plus write controls (route buttons + a Stop button via ui.Call, a
+send box via ui.Form) that call straight into the same
+get_status/set_mode/send_instruction/stop_session handlers the chat tools
+use — every action bypasses chat and invokes the @chat.function directly,
+so there is exactly one code path for every write, chat or panel.
 """
 from __future__ import annotations
 
@@ -51,10 +51,12 @@ async def coding_remote_control_panel(ctx, **kwargs):
     """Status + controls for the terminal Webbee Code session.
 
     Shows whether a session is currently live, the effective routing
-    (mirror/steer), a row of route buttons (Telegram/Panel/Both/Off — each
-    calls set_mode directly), and a text box to send an instruction into the
-    live session (calls send_instruction directly). No local computation of
-    session state — always the gateway's live answer via get_status.
+    (mirror/steer), a Stop button (remote Esc — calls stop_session directly,
+    cancels the current run only), a row of route buttons (Telegram/Panel/
+    Both/Off — each calls set_mode directly), and a text box to send an
+    instruction into the live session (calls send_instruction directly). No
+    local computation of session state — always the gateway's live answer
+    via get_status.
     """
     uid = _user_id(ctx)
     try:
@@ -86,6 +88,14 @@ async def coding_remote_control_panel(ctx, **kwargs):
                     {"key": "Steer", "value": ", ".join(data.steer or []) or "none"},
                 ]),
             ]),
+            # Remote Esc — cancels the current run only (session/thread
+            # survive). Calls stop_session directly, the same single code
+            # path the chat tool uses; disabled while no session is live.
+            footer=ui.Button(
+                label="Stop", variant="danger", size="sm", icon="Square",
+                disabled=not active,
+                on_click=ui.Call("stop_session"),
+            ),
         ),
         ui.Section(title="Route", children=[_route_buttons(mode)]),
         ui.Section(title="Send instruction", children=[

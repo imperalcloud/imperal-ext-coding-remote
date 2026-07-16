@@ -29,6 +29,35 @@ _MODES = {
     "off": {"enabled": False, "mirror": [], "steer": []},
 }
 
+# Origin-honest steer (v2): core surface vocab the gateway validates against.
+# "panel" is the ext/panel-side alias for the core "web-panel" surface.
+_SURFACES = {"telegram", "web-panel", "discord", "api"}
+_SURFACE_ALIASES = {"panel": "web-panel"}
+
+
+def _turn_surface(ctx) -> str | None:
+    """Best-effort read of the acting turn's surface, normalized to core vocab.
+
+    The SDK Context (5.9.x) does NOT expose the dispatch surface — the kernel
+    threads it per-turn (kctx.surface) but stops short of the extension
+    Context (``_metadata`` carries only history/skeleton_data/connected_emails/
+    _context). So today this returns ``None`` and the field is OMITTED from
+    the steer body (the gateway then applies its back-compat default,
+    web-panel). The reads are tolerant on purpose: the moment the kernel
+    starts threading the surface (``ctx.surface`` or
+    ``ctx._metadata["surface"]``), origin becomes honest with zero ext
+    changes. Unknown/non-string values are omitted, never guessed — the
+    endpoint 422s junk instead of silently mislabeling an origin."""
+    raw = getattr(ctx, "surface", None)
+    if not isinstance(raw, str) or not raw.strip():
+        meta = getattr(ctx, "_metadata", None) or {}
+        raw = meta.get("surface") if isinstance(meta, dict) else None
+    if not isinstance(raw, str):
+        return None
+    s = raw.strip().lower()
+    s = _SURFACE_ALIASES.get(s, s)
+    return s if s in _SURFACES else None
+
 
 @chat.function("get_status", action_type="read",
     description="Show remote-control status of the terminal coding session (active? mirror/steer routing).",
@@ -93,10 +122,20 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
     Requires an active session; when none is live the gateway refuses with a
     clean reason (e.g. "no active coding session") that is surfaced as-is,
     with no internal URL/host ever leaked into the message.
+
+    Origin-honest (v2): the acting turn's surface (normalized to the core
+    vocab, see :func:`_turn_surface`) rides along in the steer body so the
+    terminal labels the instruction with its TRUE origin (e.g. ``[telegram]``).
+    When the surface is not readable from ctx the field is omitted and the
+    gateway applies its default.
     """
     try:
         uid = _user_id(ctx)
-        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/steer", {"text": params.text})
+        body: dict = {"text": params.text}
+        surface = _turn_surface(ctx)
+        if surface:
+            body["surface"] = surface
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/steer", body)
         if err:
             return ActionResult.error(f"Not sent: {err}")
         return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
@@ -105,4 +144,28 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
         return ActionResult.error(f"Failed to send instruction: {_safe_err(e)}")
 
 
-__all__ = ["fn_status", "fn_set", "fn_send"]
+@chat.function("stop_session", action_type="write",
+    description="Stop the running terminal coding session (like pressing Esc in the terminal).",
+    data_model=CodingRemote)
+async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
+    """Stop the acting user's running coding turn — remote Esc.
+
+    Always targets ``ctx.user.imperal_id`` — never a caller-supplied user.
+    Cancels the CURRENT run only: the session and its thread survive, exactly
+    like pressing Esc in the terminal, so the next instruction continues the
+    same conversation. It never needs to be approved twice — one call, one
+    cancel. When nothing is running the gateway refuses with an honest no-op
+    reason (surfaced as-is, no internal URL/host ever leaked).
+    """
+    try:
+        uid = _user_id(ctx)
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/stop", {})
+        if err:
+            return ActionResult.error(f"Not stopped: {err}")
+        return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
+                                    summary="stop sent to your coding session")
+    except Exception as e:
+        return ActionResult.error(f"Failed to stop the coding session: {_safe_err(e)}")
+
+
+__all__ = ["fn_status", "fn_set", "fn_send", "fn_stop"]

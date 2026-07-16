@@ -13,13 +13,18 @@ session from chat or the panel — while it keeps running on your machine.
   `panel` (mirror to the panel only, no remote steer), `both` (mirror to
   both, steer via Telegram), or `off` (turn remote control off).
 - `send_instruction` (write) — push a new instruction into the live
-  session. Requires an active session.
+  session. Requires an active session. Origin-honest: the acting turn's
+  surface (telegram / web-panel / discord / api) rides along so the
+  terminal labels the instruction with its true origin.
+- `stop_session` (write) — stop the running turn, like pressing Esc in
+  the terminal. Cancels the current run only; the session and its
+  conversation survive. An idle session is an honest no-op error.
 
 ## Panel
 
-A control page (left slot) showing live session status, route buttons
-(Telegram/Panel/Both/Off), and a send box — this extension IS the control
-surface, so it stays visible in the sidebar.
+A control page (left slot) showing live session status, a Stop button
+(remote Esc), route buttons (Telegram/Panel/Both/Off), and a send box —
+this extension IS the control surface, so it stays visible in the sidebar.
 
 ## Access
 

@@ -19,13 +19,23 @@ import app as app_mod  # noqa: E402 (import after sys.path fix-up, see above)
 
 @pytest.fixture
 def make_ctx():
-    """Factory fixture: minimal ctx stand-in — only ctx.user.imperal_id is used
-    by app.py/handlers.py. Auto-discovered by pytest (no cross-module import),
-    so it is portable regardless of pytest rootdir / import-mode / how the
-    validation host invokes pytest."""
-    def _make(imperal_id: str = "imp_u_TEST"):
+    """Factory fixture: minimal ctx stand-in — handlers use ctx.user.imperal_id
+    plus (tolerantly) a turn surface via ``ctx.surface`` / ``ctx._metadata``.
+    Auto-discovered by pytest (no cross-module import), so it is portable
+    regardless of pytest rootdir / import-mode / how the validation host
+    invokes pytest.
+
+    ``surface`` sets a ``ctx.surface`` attribute; ``metadata`` sets
+    ``ctx._metadata`` — both optional, mirroring that the real SDK Context
+    (5.9.x) exposes NEITHER today (the default ctx has neither attribute)."""
+    def _make(imperal_id: str = "imp_u_TEST", surface=None, metadata=None):
         user = SimpleNamespace(imperal_id=imperal_id)
-        return SimpleNamespace(user=user)
+        ctx = SimpleNamespace(user=user)
+        if surface is not None:
+            ctx.surface = surface
+        if metadata is not None:
+            ctx._metadata = metadata
+        return ctx
     return _make
 
 

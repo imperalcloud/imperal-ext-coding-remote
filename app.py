@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.0.0", capabilities=[],
+    "coding-remote", version="1.1.0", capabilities=[],
     display_name="Coding Remote",
     description=(
         "Control your terminal Webbee Code session remotely — mirror it to "
@@ -49,7 +49,12 @@ chat = ChatExtension(
         "does both with Telegram steer, 'off' turns remote control off. "
         "send_instruction pushes a new instruction into the live session — it "
         "only works while a session is active; if there is none, tell the user "
-        "to start one from their terminal."
+        "to start one from their terminal. stop_session stops the running "
+        "turn (like pressing Esc in the terminal): the session and its "
+        "conversation survive, only the current run is cancelled — use it "
+        "when the user asks to stop/cancel/interrupt what the coding session "
+        "is doing right now; if nothing is running it reports an honest "
+        "no-op."
     ),
 )
 
