@@ -24,7 +24,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -159,6 +159,18 @@
             ],
             "default": null,
             "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
           }
         },
         "required": [
@@ -198,7 +210,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -333,6 +345,18 @@
             ],
             "default": null,
             "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
           }
         },
         "required": [
@@ -343,7 +367,7 @@
         "type": "object",
         "x-sdl": "entity"
       },
-      "event": "",
+      "event": "coding-remote.route_changed",
       "background": false,
       "long_running": false,
       "scopes": [],
@@ -372,7 +396,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -507,6 +531,18 @@
             ],
             "default": null,
             "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
           }
         },
         "required": [
@@ -517,7 +553,7 @@
         "type": "object",
         "x-sdl": "entity"
       },
-      "event": "",
+      "event": "coding-remote.instruction_sent",
       "background": false,
       "long_running": false,
       "scopes": [],
@@ -537,7 +573,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -672,6 +708,18 @@
             ],
             "default": null,
             "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
           }
         },
         "required": [
@@ -682,7 +730,7 @@
         "type": "object",
         "x-sdl": "entity"
       },
-      "event": "",
+      "event": "coding-remote.stopped",
       "background": false,
       "long_running": false,
       "scopes": [],
@@ -711,7 +759,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -846,6 +894,18 @@
             ],
             "default": null,
             "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
           }
         },
         "required": [
@@ -856,7 +916,7 @@
         "type": "object",
         "x-sdl": "entity"
       },
-      "event": "",
+      "event": "coding-remote.coding_mode_changed",
       "background": false,
       "long_running": false,
       "scopes": [],
@@ -879,7 +939,7 @@
       "title": "Coding remote",
       "tree": {},
       "icon": "Terminal",
-      "refresh": "manual",
+      "refresh": "on_event:coding-remote.route_changed,coding-remote.instruction_sent,coding-remote.stopped,coding-remote.coding_mode_changed",
       "center_overlay": false
     }
   ]

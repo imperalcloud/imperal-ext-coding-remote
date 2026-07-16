@@ -13,6 +13,7 @@ chat or panel.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from imperal_sdk import ui
 
@@ -66,9 +67,33 @@ def _current_mode(mirror: list[str], steer: list[str], enabled: bool) -> str:
     return ""
 
 
+def _fmt_checked_at(checked_at: str | None) -> str:
+    """Render CodingRemote.checked_at (UTC ISO-8601) as a short, honest
+    "as-of" label. Never claims to be the terminal's last-activity time —
+    that timestamp doesn't exist on the gateway today (see models.py). A
+    missing/unparsable value renders "unknown" rather than hiding the row or
+    silently defaulting to "now", so a stale/cached panel render is visible
+    as such instead of masquerading as fresh."""
+    if not checked_at:
+        return "unknown"
+    try:
+        dt = datetime.strptime(checked_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "unknown"
+    return dt.strftime("%Y-%m-%d %H:%M UTC")
+
+
 @ext.panel(
     "control", slot="left", title="Coding remote", icon="Terminal",
-    refresh="manual",
+    # Re-render after every write this panel can trigger (route/send/stop/
+    # coding-mode) so "Live"/"Idle" and the Stop button always reflect a
+    # FRESH get_status answer instead of the snapshot from the last manual
+    # panel load. Bug fix (2026-07-17): the panel used to sit on
+    # refresh="manual" with no write tool declaring event=, so nothing ever
+    # told the platform to re-fetch — the card could show "Live" long after
+    # the terminal session had actually ended.
+    refresh="on_event:coding-remote.route_changed,coding-remote.instruction_sent,"
+            "coding-remote.stopped,coding-remote.coding_mode_changed",
 )
 async def coding_remote_control_panel(ctx, **kwargs):
     """Status + controls for the terminal Webbee Code session.
@@ -111,6 +136,7 @@ async def coding_remote_control_panel(ctx, **kwargs):
                     {"key": "Remote control", "value": "On" if data.enabled else "Off"},
                     {"key": "Mirror", "value": ", ".join(data.mirror or []) or "none"},
                     {"key": "Steer", "value": ", ".join(data.steer or []) or "none"},
+                    {"key": "Checked", "value": _fmt_checked_at(data.checked_at)},
                 ]),
             ]),
             # Remote Esc — cancels the current run only (session/thread

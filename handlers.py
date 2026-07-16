@@ -1,10 +1,21 @@
 """Coding Remote · chat tools — FACTS out, narrator phrases (ICNLI)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from pydantic import BaseModel, Field
 
 from app import ActionResult, chat, gw_get, gw_put, gw_post, _user_id, _safe_err
 from models import CodingRemote
+
+
+def _utc_now_iso() -> str:
+    """UTC ISO-8601 timestamp, second precision (e.g. 2026-07-17T02:45:47Z).
+
+    Used ONLY as ``CodingRemote.checked_at`` — the moment THIS status read
+    was fetched, never a fabricated terminal-session last-activity time (the
+    gateway doesn't expose one today; see CodingRemote docstring)."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class EmptyParams(BaseModel):
@@ -86,13 +97,14 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
         st = d.get("state", {})
         return ActionResult.success(
             data=CodingRemote(active=d.get("active", False), session_id=d.get("session_id"),
-                              enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", [])),
+                              enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", []),
+                              checked_at=_utc_now_iso()),
             summary=f"coding session {'live' if d.get('active') else 'idle'}; remote {'on' if st.get('enabled') else 'off'}")
     except Exception as e:
         return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}")
 
 
-@chat.function("set_mode", action_type="write",
+@chat.function("set_mode", action_type="write", event="coding-remote.route_changed",
     description="Route the terminal coding session: tg (Telegram), panel, both, or off.",
     data_model=CodingRemote)
 async def fn_set(ctx, params: SetParams) -> ActionResult:
@@ -121,7 +133,7 @@ async def fn_set(ctx, params: SetParams) -> ActionResult:
         return ActionResult.error(f"Failed to set coding-remote: {_safe_err(e)}")
 
 
-@chat.function("send_instruction", action_type="write",
+@chat.function("send_instruction", action_type="write", event="coding-remote.instruction_sent",
     description="Send an instruction to the live terminal coding session (it keeps running on your machine).",
     data_model=CodingRemote)
 async def fn_send(ctx, params: SendParams) -> ActionResult:
@@ -153,7 +165,7 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
         return ActionResult.error(f"Failed to send instruction: {_safe_err(e)}")
 
 
-@chat.function("stop_session", action_type="write",
+@chat.function("stop_session", action_type="write", event="coding-remote.stopped",
     description="Stop the running terminal coding session (like pressing Esc in the terminal).",
     data_model=CodingRemote)
 async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
@@ -177,7 +189,7 @@ async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
         return ActionResult.error(f"Failed to stop the coding session: {_safe_err(e)}")
 
 
-@chat.function("set_coding_mode", action_type="write",
+@chat.function("set_coding_mode", action_type="write", event="coding-remote.coding_mode_changed",
     description="Set the terminal coding session's mode: default (ask before risky actions), plan (read-only planning), or autopilot (auto-approve — the terminal will ask you to confirm the switch).",
     data_model=CodingRemote)
 async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
