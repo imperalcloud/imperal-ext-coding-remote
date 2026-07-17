@@ -17,7 +17,13 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.2.0", capabilities=[],
+    "coding-remote", version="1.2.1",
+    # Federal-rigor scope surface (I-SCOPES-DECLARED-NOT-WILDCARD): this app
+    # reads its own remote-control state and writes routing/mode/instructions
+    # through the gateway control plane — declare that surface so the kernel
+    # enforces tool.required_scopes ⊆ declared instead of a wildcard fallback
+    # (a system app auto-installed for everyone must never ship wildcard).
+    capabilities=["coding_remote:read", "coding_remote:write"],
     display_name="Coding Remote",
     description=(
         "Control your terminal Webbee Code session remotely — mirror it to "

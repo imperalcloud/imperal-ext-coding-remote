@@ -101,7 +101,7 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
                               checked_at=_utc_now_iso()),
             summary=f"coding session {'live' if d.get('active') else 'idle'}; remote {'on' if st.get('enabled') else 'off'}")
     except Exception as e:
-        return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}")
+        return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}", code="CODING_REMOTE_STATUS_FAILED")
 
 
 @chat.function("set_mode", action_type="write", event="coding-remote.route_changed",
@@ -120,17 +120,17 @@ async def fn_set(ctx, params: SetParams) -> ActionResult:
         uid = _user_id(ctx)
         body = _MODES.get(params.mode.strip().lower())
         if body is None:
-            return ActionResult.error("mode must be one of: tg, panel, both, off")
+            return ActionResult.error("mode must be one of: tg, panel, both, off", code="CODING_REMOTE_BAD_MODE")
         res, err = await gw_put(f"/v1/internal/coding-remote/{uid}", body)
         if err:
-            return ActionResult.error(f"Not saved: {err}")
+            return ActionResult.error(f"Not saved: {err}", code="CODING_REMOTE_ROUTE_WRITE_FAILED")
         st = (res or {}).get("state", {})
         return ActionResult.success(
             data=CodingRemote(active=(res or {}).get("active", False), session_id=(res or {}).get("session_id"),
                               enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", [])),
             summary=f"coding remote set: {params.mode}")
     except Exception as e:
-        return ActionResult.error(f"Failed to set coding-remote: {_safe_err(e)}")
+        return ActionResult.error(f"Failed to set coding-remote: {_safe_err(e)}", code="CODING_REMOTE_ROUTE_WRITE_FAILED")
 
 
 @chat.function("send_instruction", action_type="write", event="coding-remote.instruction_sent",
@@ -158,11 +158,11 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
             body["surface"] = surface
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/steer", body)
         if err:
-            return ActionResult.error(f"Not sent: {err}")
+            return ActionResult.error(f"Not sent: {err}", code="CODING_REMOTE_INSTRUCTION_FAILED")
         return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
                                     summary="instruction sent to your coding session")
     except Exception as e:
-        return ActionResult.error(f"Failed to send instruction: {_safe_err(e)}")
+        return ActionResult.error(f"Failed to send instruction: {_safe_err(e)}", code="CODING_REMOTE_INSTRUCTION_FAILED")
 
 
 @chat.function("stop_session", action_type="write", event="coding-remote.stopped",
@@ -182,11 +182,11 @@ async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
         uid = _user_id(ctx)
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/stop", {})
         if err:
-            return ActionResult.error(f"Not stopped: {err}")
+            return ActionResult.error(f"Not stopped: {err}", code="CODING_REMOTE_STOP_FAILED")
         return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
                                     summary="stop sent to your coding session")
     except Exception as e:
-        return ActionResult.error(f"Failed to stop the coding session: {_safe_err(e)}")
+        return ActionResult.error(f"Failed to stop the coding session: {_safe_err(e)}", code="CODING_REMOTE_STOP_FAILED")
 
 
 @chat.function("set_coding_mode", action_type="write", event="coding-remote.coding_mode_changed",
@@ -219,14 +219,14 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
         uid = _user_id(ctx)
         mode = params.mode.strip().lower()
         if mode not in _CODING_MODES:
-            return ActionResult.error("mode must be one of: default, plan, autopilot")
+            return ActionResult.error("mode must be one of: default, plan, autopilot", code="CODING_REMOTE_BAD_CODING_MODE")
         body: dict = {"mode": mode}
         surface = _turn_surface(ctx)
         if surface:
             body["surface"] = surface
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/mode", body)
         if err:
-            return ActionResult.error(f"Not set: {err}")
+            return ActionResult.error(f"Not set: {err}", code="CODING_REMOTE_CODING_MODE_FAILED")
         summary = f"coding mode → {mode}"
         if mode == "autopilot":
             summary += " (autopilot asks the terminal to confirm)"
@@ -234,7 +234,7 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
             data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
             summary=summary)
     except Exception as e:
-        return ActionResult.error(f"Failed to set the coding mode: {_safe_err(e)}")
+        return ActionResult.error(f"Failed to set the coding mode: {_safe_err(e)}", code="CODING_REMOTE_CODING_MODE_FAILED")
 
 
 __all__ = ["fn_status", "fn_set", "fn_send", "fn_stop", "fn_coding_mode"]
