@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.2.1",
+    "coding-remote", version="1.2.2",
     # Federal-rigor scope surface (I-SCOPES-DECLARED-NOT-WILDCARD): this app
     # reads its own remote-control state and writes routing/mode/instructions
     # through the gateway control plane — declare that surface so the kernel
@@ -44,7 +44,9 @@ chat = ChatExtension(
         "Remote control for the terminal Webbee Code session: check whether "
         "it is live, route it to Telegram/panel/both/off, switch its mode "
         "(default/plan/autopilot), and send it an instruction while it keeps "
-        "running on your machine."
+        "running on your machine. (This module only remote-controls the "
+        "terminal session — server operations over SSH are also available "
+        "directly in this chat via Connections, no terminal needed.)"
     ),
     system_prompt=(
         "Coding Remote module — remote control for the user's terminal "
@@ -56,7 +58,9 @@ chat = ChatExtension(
         "does both with Telegram steer, 'off' turns remote control off. "
         "send_instruction pushes a new instruction into the live session — it "
         "only works while a session is active; if there is none, tell the user "
-        "to start one from their terminal. stop_session stops the running "
+        "to start one from their terminal (server work over SSH does NOT need "
+        "a coding session: with Connections it is available directly in this "
+        "chat). stop_session stops the running "
         "turn (like pressing Esc in the terminal): the session and its "
         "conversation survive, only the current run is cancelled — use it "
         "when the user asks to stop/cancel/interrupt what the coding session "
