@@ -28,9 +28,10 @@ class CodingRemote(sdl.Entity):
     the session is waiting on an approval, else ``None`` — answer it with
     the ``reply_consent`` tool.
 
-    ``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the
-    terminal pointer (opaque string, rendered as-is — never reformatted into
-    a fabricated relative time).
+    ``last_seen`` (v1.3.1: epoch SECONDS int — v1.3.0 mistyped it str and
+    every ONLINE terminal failed model validation) is the gateway's own
+    last-seen marker for the terminal pointer; the panel renders it as an
+    honest relative time derived from this real timestamp.
 
     ``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer
     was fetched from the gateway (set by fn_status only) — the gateway's
@@ -49,7 +50,7 @@ class CodingRemote(sdl.Entity):
     checked_at: str | None = None
     running: bool = False
     mode: str | None = None
-    last_seen: str | None = None
+    last_seen: int | None = None  # epoch seconds (gateway pointer TTL truth) — v1.3.1: was mistyped str, ValidationError whenever the terminal was ONLINE
     pending_consent: dict | None = None
 
     @model_validator(mode="before")

@@ -73,6 +73,24 @@ def _current_mode(mirror: list[str], steer: list[str], enabled: bool) -> str:
     return ""
 
 
+def _ago(epoch) -> str:
+    """PURE. Humanize an epoch-seconds marker («3m ago»). Never raises —
+    unknown/garbage input renders as an empty string (the row is then
+    simply skipped by the caller's truthiness check)."""
+    try:
+        import time
+        delta = max(0, int(time.time()) - int(epoch))
+    except Exception:
+        return ""
+    if delta < 60:
+        return "just now"
+    if delta < 3600:
+        return f"{delta // 60}m ago"
+    if delta < 86400:
+        return f"{delta // 3600}h ago"
+    return f"{delta // 86400}d ago"
+
+
 def _fmt_checked_at(checked_at: str | None) -> str:
     """Render CodingRemote.checked_at (UTC ISO-8601) as a short, honest
     "as-of" label. Never claims to be the terminal's last-activity time —
@@ -175,8 +193,8 @@ async def coding_remote_control_panel(ctx, **kwargs):
         {"key": "Steer", "value": ", ".join(data.steer or []) or "none"},
         {"key": "Checked", "value": _fmt_checked_at(data.checked_at)},
     ]
-    if running and not active and data.last_seen:
-        kv_items.insert(0, {"key": "Terminal", "value": f"last seen {data.last_seen}"})
+    if running and not active and data.last_seen and _ago(data.last_seen):
+        kv_items.insert(0, {"key": "Terminal", "value": f"last seen {_ago(data.last_seen)}"})
 
     coding_mode_children = [_coding_mode_buttons(running, applied_mode)]
     if running and applied_mode is None:

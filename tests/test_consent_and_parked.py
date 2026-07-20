@@ -48,7 +48,7 @@ def _flat(node) -> str:
 async def test_get_status_passes_through_running_mode_last_seen_pending(make_ctx, gw_mock):
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": True, "running": True,
-        "applied_mode": "plan", "last_seen": "2026-07-20T10:05:00Z", "pending_consent": PENDING,
+        "applied_mode": "plan", "last_seen": 1784545769, "pending_consent": PENDING,
         "state": {"enabled": True, "mirror": ["telegram"], "steer": ["telegram"]},
     })
 
@@ -57,7 +57,7 @@ async def test_get_status_passes_through_running_mode_last_seen_pending(make_ctx
     assert res.status == "success"
     assert res.data.running is True
     assert res.data.mode == "plan"
-    assert res.data.last_seen == "2026-07-20T10:05:00Z"
+    assert res.data.last_seen == 1784545769
     assert res.data.pending_consent == PENDING
 
 
@@ -67,7 +67,7 @@ async def test_get_status_parked_session_running_true_active_false(make_ctx, gw_
     (active=False) — the WIDER truth this version introduces."""
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": False, "running": True,
-        "applied_mode": None, "last_seen": "2026-07-20T09:00:00Z", "pending_consent": None,
+        "applied_mode": None, "last_seen": 1784542000, "pending_consent": None,
         "state": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]},
     })
 
@@ -344,7 +344,7 @@ async def test_panel_live_session_stat_and_controls_enabled(make_ctx, gw_mock):
 async def test_panel_parked_session_shows_offline_wording_and_last_seen(make_ctx, gw_mock):
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": False, "running": True,
-        "applied_mode": None, "last_seen": "2026-07-20T09:00:00Z", "pending_consent": None,
+        "applied_mode": None, "last_seen": 1784542000, "pending_consent": None,
         "state": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]},
     })
 
@@ -352,7 +352,7 @@ async def test_panel_parked_session_shows_offline_wording_and_last_seen(make_ctx
     flat = _flat(node)
     assert "Parked" in flat and "terminal offline" in flat
     assert "last seen" in flat
-    assert "2026-07-20T09:00:00Z" in flat
+    assert "ago" in flat or "just now" in flat  # humanized epoch (v1.3.1)
 
 
 @pytest.mark.asyncio
@@ -439,3 +439,21 @@ def test_control_panel_refresh_includes_consent_replied_event():
     assert panel_def is not None
     refresh = panel_def.get("refresh", "")
     assert "coding-remote.consent_replied" in refresh
+
+
+def test_status_accepts_int_epoch_last_seen():
+    """v1.3.1 regression: the gateway's last_seen is epoch SECONDS (int).
+    v1.3.0 typed it str -> ValidationError exactly when the terminal was
+    ONLINE (offline -> None validated fine) -> the panel's 'internal error'."""
+    from models import CodingRemote
+    m = CodingRemote(active=True, running=True, last_seen=1784545769)
+    assert m.last_seen == 1784545769
+
+
+def test_panel_last_seen_humanized(monkeypatch):
+    import time as _time
+    import panels
+    monkeypatch.setattr(_time, "time", lambda: 1784545769 + 180)
+    assert panels._ago(1784545769) == "3m ago"
+    assert panels._ago("garbage") == ""
+    assert panels._ago(1784545769 + 500) == "just now"  # future/skew clamps to 0
