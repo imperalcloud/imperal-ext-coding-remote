@@ -6,32 +6,42 @@ session from chat or the panel — while it keeps running on your machine.
 
 ## Tools
 
-- `get_status` (read) — is a coding session currently live, and how is it
-  routed (mirror = where output is echoed, steer = where replies can drive
-  it back).
+- `get_status` (read) — is a coding session live (terminal online), parked
+  (a session/marathon exists but the terminal is offline), or idle (none at
+  all); how it is routed (mirror = where output is echoed, steer = where
+  replies can drive it back); the applied consent mode; and any pending
+  approval waiting for a reply.
 - `set_mode` (write) — route the session: `tg` (mirror+steer via Telegram),
-  `panel` (mirror to the panel only, no remote steer), `both` (mirror to
-  both, steer via Telegram), or `off` (turn remote control off).
-- `send_instruction` (write) — push a new instruction into the live
-  session. Requires an active session. Origin-honest: the acting turn's
-  surface (telegram / web-panel / discord / api) rides along so the
-  terminal labels the instruction with its true origin.
+  `panel` (mirror+steer via the panel), `both` (mirror to both, steer via
+  Telegram AND the panel), or `off` (turn remote control off). Steer reaches
+  the session whether it is live or parked.
+- `send_instruction` (write) — push a new instruction into the session.
+  Works whenever one is running (live or parked). Origin-honest: the
+  acting turn's surface (telegram / web-panel / discord / api) rides along
+  so the terminal labels the instruction with its true origin.
 - `stop_session` (write) — stop the running turn, like pressing Esc in
   the terminal. Cancels the current run only; the session and its
   conversation survive. An idle session is an honest no-op error.
-- `set_coding_mode` (write) — switch the live session's consent mode:
+- `set_coding_mode` (write) — switch the session's consent mode:
   `default` (ask before risky actions), `plan` (read-only planning), or
   `autopilot` (auto-approve — the terminal asks its local user to confirm
   the switch; downgrades apply right away). Distinct from `set_mode`
   (routing). Ownership and remote-control state are gated server-side;
   autopilot also requires the origin surface in the steer allowlist.
+- `reply_consent` (write) — reply to a pending approval (e.g.
+  `approve`/`decline`, or any free-form text) — relayed raw to the session
+  (ICNLI: the kernel interprets the words). 404 when none is waiting is an
+  honest no-op; sending a fresh instruction instead declines it.
 
 ## Panel
 
-A control page (left slot) showing live session status, a Stop button
-(remote Esc), route buttons (Telegram/Panel/Both/Off), coding-mode buttons
-(Default/Plan/Autopilot), and a send box — this extension IS the control
-surface, so it stays visible in the sidebar.
+A control page (left slot) showing live/parked/idle session status, a Stop
+button (remote Esc), an Approval-pending section with Approve/Decline when
+a consent reply is waiting, route buttons (Telegram/Panel/Both/Off),
+coding-mode buttons (Default/Plan/Autopilot — highlighting the REAL applied
+mode once the terminal ACKs one), and a send box — this extension IS the
+control surface, so it stays visible in the sidebar. Steer/mode/send
+controls stay enabled whenever a session is running, live or parked.
 
 ## Access
 

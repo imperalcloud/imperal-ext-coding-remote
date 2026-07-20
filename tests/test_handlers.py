@@ -110,29 +110,48 @@ async def test_set_mode_off_disables_routing(make_ctx, gw_mock):
 
 
 @pytest.mark.asyncio
-async def test_set_mode_both_mirrors_telegram_and_panel(make_ctx, gw_mock):
+async def test_set_mode_both_mirrors_and_steers_telegram_and_panel(make_ctx, gw_mock):
+    # v1.3.0: panel is now a real steer surface too — "both" steers via
+    # Telegram AND the panel, not Telegram alone (the panel steer allowlist
+    # widened on the gateway side, T3).
     echoed = {"user_id": UID, "session_id": f"coding-{UID}-abc123", "active": True,
-              "state": {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram"]}}
+              "state": {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram", "panel"]}}
     gw_mock.put(STATUS_PATH, json=echoed)
 
     res = await h.fn_set(make_ctx(), h.SetParams(mode="both"))
 
     body = json.loads(gw_mock.last_request("PUT", STATUS_PATH).content)
-    assert body == {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram"]}
+    assert body == {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram", "panel"]}
     assert res.data.mirror == ["telegram", "panel"]
+    assert res.data.steer == ["telegram", "panel"]
 
 
 @pytest.mark.asyncio
 async def test_set_mode_case_and_whitespace_insensitive(make_ctx, gw_mock):
     echoed = {"user_id": UID, "session_id": None, "active": False,
-              "state": {"enabled": True, "mirror": ["panel"], "steer": []}}
+              "state": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]}}
     gw_mock.put(STATUS_PATH, json=echoed)
 
     res = await h.fn_set(make_ctx(), h.SetParams(mode="  Panel  "))
 
     assert res.status == "success"
     body = json.loads(gw_mock.last_request("PUT", STATUS_PATH).content)
-    assert body == {"enabled": True, "mirror": ["panel"], "steer": []}
+    assert body == {"enabled": True, "mirror": ["panel"], "steer": ["panel"]}
+
+
+@pytest.mark.asyncio
+async def test_set_mode_panel_now_steers_via_panel(make_ctx, gw_mock):
+    # v1.3.0: the panel preset gains real remote steer (T3 widened the
+    # gateway's steer allowlist) — no longer mirror-only.
+    echoed = {"user_id": UID, "session_id": f"coding-{UID}-abc123", "active": True,
+              "state": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]}}
+    gw_mock.put(STATUS_PATH, json=echoed)
+
+    res = await h.fn_set(make_ctx(), h.SetParams(mode="panel"))
+
+    body = json.loads(gw_mock.last_request("PUT", STATUS_PATH).content)
+    assert body == {"enabled": True, "mirror": ["panel"], "steer": ["panel"]}
+    assert res.data.steer == ["panel"]
 
 
 @pytest.mark.asyncio

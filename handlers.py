@@ -38,10 +38,15 @@ class CodingModeParams(BaseModel):
     mode: str = Field(description="default | plan | autopilot")
 
 
+class ConsentParams(BaseModel):
+    """Reply to a pending approval waiting on the terminal coding session."""
+    text: str = Field(description="the reply to relay for the pending approval, e.g. 'approve' or 'decline'")
+
+
 _MODES = {
     "tg": {"enabled": True, "mirror": ["telegram"], "steer": ["telegram"]},
-    "panel": {"enabled": True, "mirror": ["panel"], "steer": []},
-    "both": {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram"]},
+    "panel": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]},
+    "both": {"enabled": True, "mirror": ["telegram", "panel"], "steer": ["telegram", "panel"]},
     "off": {"enabled": False, "mirror": [], "steer": []},
 }
 
@@ -87,19 +92,27 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
 
     No params — always reads the caller's own session (``ctx.user.imperal_id``).
     Returns FACTS: whether a terminal Webbee Code session is currently live
-    (``active``, ``session_id``) and the effective routing (``enabled``,
-    ``mirror`` — where session output is echoed, ``steer`` — where replies
-    can drive it back).
+    (``active``, ``session_id``), whether one exists at all even parked with
+    the terminal offline (``running`` — WIDER than ``active``, see
+    :class:`CodingRemote`), the effective routing (``enabled``, ``mirror`` —
+    where session output is echoed, ``steer`` — where replies can drive it
+    back), the applied consent ``mode`` (``None`` until the terminal reports
+    one), any ``pending_consent`` waiting on a reply, and ``last_seen`` for
+    the terminal pointer.
     """
     try:
         uid = _user_id(ctx)
         d = await gw_get(f"/v1/internal/coding-remote/{uid}")
         st = d.get("state", {})
+        active = bool(d.get("active", False))
+        running = bool(d.get("running", active))
+        state_word = "live" if active else ("parked — terminal offline" if running else "idle")
         return ActionResult.success(
-            data=CodingRemote(active=d.get("active", False), session_id=d.get("session_id"),
+            data=CodingRemote(active=active, session_id=d.get("session_id"),
                               enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", []),
-                              checked_at=_utc_now_iso()),
-            summary=f"coding session {'live' if d.get('active') else 'idle'}; remote {'on' if st.get('enabled') else 'off'}")
+                              checked_at=_utc_now_iso(), running=running, mode=d.get("applied_mode"),
+                              last_seen=d.get("last_seen"), pending_consent=d.get("pending_consent")),
+            summary=f"coding session {state_word}; remote {'on' if st.get('enabled') else 'off'}")
     except Exception as e:
         return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}", code="CODING_REMOTE_STATUS_FAILED")
 
@@ -112,9 +125,10 @@ async def fn_set(ctx, params: SetParams) -> ActionResult:
 
     Always writes for ``ctx.user.imperal_id`` — never a caller-supplied user.
     ``mode`` must be one of ``tg`` (mirror+steer via Telegram), ``panel``
-    (mirror to the panel only, no remote steer), ``both`` (mirror to both,
-    steer via Telegram), or ``off`` (turn remote control off). Returns the
-    post-write FACTS in the same shape as get_status.
+    (mirror+steer via the panel — the panel can drive the session back, not
+    just watch it), ``both`` (mirror to both, steer via Telegram AND the
+    panel), or ``off`` (turn remote control off). Returns the post-write
+    FACTS in the same shape as get_status.
     """
     try:
         uid = _user_id(ctx)
@@ -237,4 +251,35 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
         return ActionResult.error(f"Failed to set the coding mode: {_safe_err(e)}", code="CODING_REMOTE_CODING_MODE_FAILED")
 
 
-__all__ = ["fn_status", "fn_set", "fn_send", "fn_stop", "fn_coding_mode"]
+@chat.function("reply_consent", action_type="write", event="coding-remote.consent_replied",
+    description="Reply to a pending approval waiting on the terminal coding session (e.g. approve or decline).",
+    data_model=CodingRemote)
+async def fn_reply_consent(ctx, params: ConsentParams) -> ActionResult:
+    """Reply to the acting user's pending consent approval.
+
+    Always targets ``ctx.user.imperal_id`` — never a caller-supplied user.
+    ``text`` is relayed RAW as the consent reply (ICNLI: the kernel
+    interprets the words, this tool never normalizes/validates "approve" /
+    "decline" itself — any free-form reply the user types goes straight
+    through).
+
+    When no approval is waiting the gateway answers 404 and this surfaces a
+    clean, honest "no approval is waiting right now" rather than a stale
+    tool/summary carried over from an old read. Any other refusal (e.g. no
+    session to relay into) is surfaced as the gateway's own reason, with no
+    internal URL/host ever leaked.
+    """
+    try:
+        uid = _user_id(ctx)
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/consent", {"text": params.text})
+        if err:
+            if err.startswith("HTTP 404"):
+                return ActionResult.error("no approval is waiting right now", code="CODING_REMOTE_NO_PENDING_CONSENT")
+            return ActionResult.error(f"Not sent: {err}", code="CODING_REMOTE_CONSENT_FAILED")
+        return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
+                                    summary="reply relayed to your coding session")
+    except Exception as e:
+        return ActionResult.error(f"Failed to reply to the approval: {_safe_err(e)}", code="CODING_REMOTE_CONSENT_FAILED")
+
+
+__all__ = ["fn_status", "fn_set", "fn_send", "fn_stop", "fn_coding_mode", "fn_reply_consent"]

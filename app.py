@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.2.2",
+    "coding-remote", version="1.3.0",
     # Federal-rigor scope surface (I-SCOPES-DECLARED-NOT-WILDCARD): this app
     # reads its own remote-control state and writes routing/mode/instructions
     # through the gateway control plane — declare that surface so the kernel
@@ -42,35 +42,45 @@ chat = ChatExtension(
     "tool_coding_remote_chat",
     description=(
         "Remote control for the terminal Webbee Code session: check whether "
-        "it is live, route it to Telegram/panel/both/off, switch its mode "
-        "(default/plan/autopilot), and send it an instruction while it keeps "
-        "running on your machine. (This module only remote-controls the "
-        "terminal session — server operations over SSH are also available "
-        "directly in this chat via Connections, no terminal needed.)"
+        "it is live or parked, route it to Telegram/panel/both/off, switch "
+        "its mode (default/plan/autopilot), send it an instruction while it "
+        "keeps running on your machine, and reply to a pending approval. "
+        "(This module only remote-controls the terminal session — server "
+        "operations over SSH are also available directly in this chat via "
+        "Connections, no terminal needed.)"
     ),
     system_prompt=(
         "Coding Remote module — remote control for the user's terminal "
         "Webbee Code (coding agent) session.\n\n"
-        "get_status shows whether a coding session is currently live and how "
-        "it is routed (mirror = where output is echoed, steer = where replies "
-        "can drive it back). set_mode changes routing: 'tg' mirrors+steers via "
-        "Telegram, 'panel' mirrors to the panel only (no remote steer), 'both' "
-        "does both with Telegram steer, 'off' turns remote control off. "
-        "send_instruction pushes a new instruction into the live session — it "
-        "only works while a session is active; if there is none, tell the user "
-        "to start one from their terminal (server work over SSH does NOT need "
-        "a coding session: with Connections it is available directly in this "
-        "chat). stop_session stops the running "
+        "get_status shows whether a coding session is currently live "
+        "(terminal online), parked (a session/marathon exists but the "
+        "terminal is offline — 'running' true, 'active' false), or idle (no "
+        "session at all); how it is routed (mirror = where output is "
+        "echoed, steer = where replies can drive it back); the applied "
+        "consent mode; and any pending_consent waiting on a reply. "
+        "set_mode changes routing: 'tg' mirrors+steers via Telegram, "
+        "'panel' mirrors+steers via the panel, 'both' does both via "
+        "Telegram AND the panel, 'off' turns remote control off — steer "
+        "reaches the session whether it is live or parked. "
+        "send_instruction pushes a new instruction into the session — it "
+        "works whenever one is running (live or parked); if none exists at "
+        "all, tell the user to start one from their terminal (server work "
+        "over SSH does NOT need a coding session: with Connections it is "
+        "available directly in this chat). stop_session stops the running "
         "turn (like pressing Esc in the terminal): the session and its "
         "conversation survive, only the current run is cancelled — use it "
         "when the user asks to stop/cancel/interrupt what the coding session "
         "is doing right now; if nothing is running it reports an honest "
-        "no-op. set_coding_mode switches the LIVE session's consent mode — "
+        "no-op. set_coding_mode switches the session's consent mode — "
         "'default' asks before risky actions, 'plan' is read-only planning, "
         "'autopilot' auto-approves (the terminal asks its local user to "
         "confirm an autopilot switch; downgrades apply right away). It is a "
         "different thing from set_mode (routing) — never mix the two — and "
-        "it only works while a session is active."
+        "it only works while a session is running. reply_consent answers a "
+        "pending_consent from get_status (e.g. 'approve'/'decline', or any "
+        "free-form reply) — the text is relayed as-is to the session, never "
+        "normalized here; if none is waiting it reports an honest no-op, "
+        "and sending a fresh instruction instead will decline it."
     ),
 )
 

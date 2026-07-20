@@ -2,7 +2,7 @@
   "manifest_schema_version": 3,
   "sdk_version": "5.9.12",
   "app_id": "coding-remote",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "name": "Coding Remote",
   "description": "Control your terminal Webbee Code session remotely — mirror it to Telegram or the panel and steer it back.",
   "icon": "icon.svg",
@@ -27,7 +27,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -174,6 +174,48 @@
             ],
             "default": null,
             "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
           }
         },
         "required": [
@@ -213,7 +255,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -360,6 +402,48 @@
             ],
             "default": null,
             "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
           }
         },
         "required": [
@@ -399,7 +483,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -546,6 +630,48 @@
             ],
             "default": null,
             "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
           }
         },
         "required": [
@@ -576,7 +702,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -723,6 +849,48 @@
             ],
             "default": null,
             "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
           }
         },
         "required": [
@@ -762,7 +930,7 @@
         "type": "object"
       },
       "return_schema": {
-        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp today, so this is an honest \"as-of\" freshness marker, never a\nfabricated \"last seen\" for the terminal itself. write-tools (fn_set/\nfn_send/fn_stop/fn_coding_mode) leave it unset — their echoed ``active``\nis a point-in-time write acknowledgement, not a fresh status read; the\npanel always re-fetches via fn_status after any write (see panels.py).",
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
         "properties": {
           "id": {
             "anyOf": [
@@ -909,6 +1077,48 @@
             ],
             "default": null,
             "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
           }
         },
         "required": [
@@ -920,6 +1130,234 @@
         "x-sdl": "entity"
       },
       "event": "coding-remote.coding_mode_changed",
+      "background": false,
+      "long_running": false,
+      "scopes": [],
+      "owner_chat_tool": "tool_coding_remote_chat"
+    },
+    {
+      "name": "reply_consent",
+      "description": "Reply to a pending approval waiting on the terminal coding session (e.g. approve or decline).",
+      "action_type": "write",
+      "chain_callable": true,
+      "effects": [],
+      "id_projection": "",
+      "params_schema": {
+        "description": "Reply to a pending approval waiting on the terminal coding session.",
+        "properties": {
+          "text": {
+            "description": "the reply to relay for the pending approval, e.g. 'approve' or 'decline'",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ConsentParams",
+        "type": "object"
+      },
+      "return_schema": {
+        "description": "Remote-control status of the terminal Webbee Code session.\n\nactive/session_id describe whether a coding session is currently live;\nenabled/mirror/steer are the effective routing state (mirror = where\nsession output is echoed, steer = where replies can drive it back).\n\n``running`` (v1.3.0+) is a WIDER truth than ``active``: it is set\nwhenever a coding/marathon workflow exists for the user at all — either\nwith a live terminal pointer (``active`` also true, \"Live\") or PARKED\nwith the terminal offline (``active`` false, \"Parked\"). ``active`` alone\nstays the narrower \"terminal process is online right now\" signal it\nalways was; never conflate the two — a parked session is still steerable,\nit just isn't attached to a live terminal.\n\n``mode`` (v1.3.0+) is the gateway's ACK of the coding session's applied\nconsent mode (``default``/``plan``/``autopilot``) — ``None`` when the\nterminal hasn't reported one yet (never guessed/defaulted).\n\n``pending_consent`` (v1.3.0+) is ``{req_id, tool, summary, since}`` when\nthe session is waiting on an approval, else ``None`` — answer it with\nthe ``reply_consent`` tool.\n\n``last_seen`` (v1.3.0+) is the gateway's own last-seen marker for the\nterminal pointer (opaque string, rendered as-is — never reformatted into\na fabricated relative time).\n\n``checked_at`` is the UTC ISO-8601 timestamp of the moment THIS answer\nwas fetched from the gateway (set by fn_status only) — the gateway's\n``GET /v1/internal/coding-remote/{uid}`` has no session last-activity\ntimestamp of its own for this field, so this is an honest \"as-of\"\nfreshness marker, never a fabricated \"last seen\" for the terminal\nitself. write-tools (fn_set/fn_send/fn_stop/fn_coding_mode/\nfn_reply_consent) leave it unset — their echoed ``active`` is a\npoint-in-time write acknowledgement, not a fresh status read; the panel\nalways re-fetches via fn_status after any write (see panels.py).",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "title": "Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "subtitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Subtitle"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Description"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Status"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url"
+          },
+          "active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Active"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Enabled"
+          },
+          "mirror": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mirror"
+          },
+          "steer": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Steer"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Checked At"
+          },
+          "running": {
+            "default": false,
+            "title": "Running",
+            "type": "boolean"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mode"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Seen"
+          },
+          "pending_consent": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Consent"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "CodingRemote",
+        "type": "object",
+        "x-sdl": "entity"
+      },
+      "event": "coding-remote.consent_replied",
       "background": false,
       "long_running": false,
       "scopes": [],
@@ -942,7 +1380,7 @@
       "title": "Coding remote",
       "tree": {},
       "icon": "Terminal",
-      "refresh": "on_event:coding-remote.route_changed,coding-remote.instruction_sent,coding-remote.stopped,coding-remote.coding_mode_changed",
+      "refresh": "on_event:coding-remote.route_changed,coding-remote.instruction_sent,coding-remote.stopped,coding-remote.coding_mode_changed,coding-remote.consent_replied",
       "center_overlay": false
     }
   ]
