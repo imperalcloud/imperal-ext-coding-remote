@@ -9,8 +9,9 @@ session from chat or the panel — while it keeps running on your machine.
 - `get_status` (read) — is a coding session live (terminal online), parked
   (a session/marathon exists but the terminal is offline), or idle (none at
   all); how it is routed (mirror = where output is echoed, steer = where
-  replies can drive it back); the applied consent mode; and any pending
-  approval waiting for a reply.
+  replies can drive it back); the applied consent mode; any pending
+  approval waiting for a reply; and `tabs` — every running session the
+  user owns (label, live/parked, mode, its own pending approval if any).
 - `set_mode` (write) — route the session: `tg` (mirror+steer via Telegram),
   `panel` (mirror+steer via the panel), `both` (mirror to both, steer via
   Telegram AND the panel), or `off` (turn remote control off). Steer reaches
@@ -30,17 +31,25 @@ session from chat or the panel — while it keeps running on your machine.
   autopilot also requires the origin surface in the steer allowlist.
 - `reply_consent` (write) — reply to a pending approval (e.g.
   `approve`/`decline`, or any free-form text) — relayed raw to the session
-  (ICNLI: the kernel interprets the words). 404 when none is waiting is an
-  honest no-op; sending a fresh instruction instead declines it.
+  (ICNLI: the kernel interprets the words). 404 when none is waiting means
+  it was already answered elsewhere (the card refreshes); sending a fresh
+  instruction instead declines it.
+
+Every write tool above also accepts an optional `session_id` — target one
+of the tabs from `get_status`'s `tabs` list instead of the most recently
+active session.
 
 ## Panel
 
 A control page (left slot) showing live/parked/idle session status, a Stop
 button (remote Esc), an Approval-pending section with Approve/Decline when
-a consent reply is waiting, route buttons (Telegram/Panel/Both/Off),
-coding-mode buttons (Default/Plan/Autopilot — highlighting the REAL applied
-mode once the terminal ACKs one), and a send box — this extension IS the
-control surface, so it stays visible in the sidebar. Steer/mode/send
+a consent reply is waiting, a Tabs section (once there is more than one
+running session, or any session has its own pending approval — label,
+live/offline glyph, mode, and per-tab Approve/Decline/Stop), route buttons
+(Telegram/Panel/Both/Off), coding-mode buttons (Default/Plan/Autopilot —
+highlighting the REAL applied mode once the terminal ACKs one), and a send
+box (with a tab picker once there is more than one tab) — this extension
+IS the control surface, so it stays visible in the sidebar. Steer/mode/send
 controls stay enabled whenever a session is running, live or parked.
 
 ## Access

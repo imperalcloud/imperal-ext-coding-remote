@@ -148,7 +148,7 @@ async def test_reply_consent_no_pending_404_is_honest_not_stale(make_ctx, gw_moc
     res = await h.fn_reply_consent(make_ctx(), h.ConsentParams(text="approve"))
 
     assert res.status == "error"
-    assert res.error == "no approval is waiting right now"
+    assert res.error == "that approval was already answered — the card will refresh"
     assert "104.224" not in res.error
     assert "http://" not in res.error
     assert "https://" not in res.error

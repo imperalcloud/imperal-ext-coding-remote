@@ -1,12 +1,22 @@
 """Coding Remote · chat tools — FACTS out, narrator phrases (ICNLI)."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, Field
 
 from app import ActionResult, chat, gw_get, gw_put, gw_post, _user_id, _safe_err
-from models import CodingRemote
+from models import CodingRemote, CodingTab
+
+log = logging.getLogger("coding-remote")
+
+# Shared Field description for the optional per-tab targeting param every
+# write tool gains (T2, W4c 2026-07-20) — one wording everywhere, so the
+# brain and the panel see the exact same contract regardless of which tool
+# it is calling.
+_SESSION_ID_DESC = ("target a specific tab — see get_status's tabs list; "
+                     "omitted = the most recently active tab")
 
 
 def _utc_now_iso() -> str:
@@ -31,16 +41,24 @@ class SetParams(BaseModel):
 class SendParams(BaseModel):
     """Send an instruction to the live coding session."""
     text: str = Field(description="the instruction to run in the coding session")
+    session_id: str = Field(default="", description=_SESSION_ID_DESC)
+
+
+class StopParams(BaseModel):
+    """Stop the running terminal coding session (like pressing Esc)."""
+    session_id: str = Field(default="", description=_SESSION_ID_DESC)
 
 
 class CodingModeParams(BaseModel):
     """Set the terminal coding session's mode. mode: default | plan | autopilot."""
     mode: str = Field(description="default | plan | autopilot")
+    session_id: str = Field(default="", description=_SESSION_ID_DESC)
 
 
 class ConsentParams(BaseModel):
     """Reply to a pending approval waiting on the terminal coding session."""
     text: str = Field(description="the reply to relay for the pending approval, e.g. 'approve' or 'decline'")
+    session_id: str = Field(default="", description=_SESSION_ID_DESC)
 
 
 _MODES = {
@@ -84,6 +102,35 @@ def _turn_surface(ctx) -> str | None:
     return s if s in _SURFACES else None
 
 
+def _row_to_tab(row: dict) -> CodingTab:
+    """One gateway inventory row -> CodingTab. The gateway's key is
+    ``applied_mode`` (matching CodingRemote's own gateway-facing read); the
+    row-to-model mapping renames it to ``mode`` to match CodingRemote.mode —
+    the freshest-session twin of this same fact — so both fields share one
+    name across the ext regardless of which one a caller is looking at."""
+    return CodingTab(
+        session_id=row.get("session_id"), slot=row.get("slot", ""), kind=row.get("kind", ""),
+        label=row.get("label"), terminal_online=bool(row.get("terminal_online", False)),
+        mode=row.get("applied_mode"), requested_mode=row.get("requested_mode"),
+        pending_consent=row.get("pending_consent"), started=row.get("started"),
+    )
+
+
+async def _fetch_tabs(uid: str) -> list[CodingTab]:
+    """Best-effort per-tab inventory (T2, W4c 2026-07-20) — GET
+    .../{uid}/sessions. Fail-soft BY DESIGN: any error (network hiccup, an
+    older gateway without the route, a malformed row) yields an empty list
+    rather than failing the whole get_status read — the Tabs section is
+    additive, never load-bearing for the rest of the status card. Never
+    raises."""
+    try:
+        d = await gw_get(f"/v1/internal/coding-remote/{uid}/sessions")
+        return [_row_to_tab(row) for row in d.get("sessions", [])]
+    except Exception as e:
+        log.warning("coding-remote tabs fetch failed for %s: %s", uid, _safe_err(e))
+        return []
+
+
 @chat.function("get_status", action_type="read",
     description="Show remote-control status of the terminal coding session (active? mirror/steer routing).",
     data_model=CodingRemote)
@@ -97,8 +144,11 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
     :class:`CodingRemote`), the effective routing (``enabled``, ``mirror`` —
     where session output is echoed, ``steer`` — where replies can drive it
     back), the applied consent ``mode`` (``None`` until the terminal reports
-    one), any ``pending_consent`` waiting on a reply, and ``last_seen`` for
-    the terminal pointer.
+    one), any ``pending_consent`` waiting on a reply, ``last_seen`` for the
+    terminal pointer, and ``tabs`` (T2, W4c 2026-07-20) — every RUNNING
+    session the user owns (see :class:`CodingTab`), so the brain/panel can
+    name a specific tab to the write tools below via their optional
+    ``session_id`` param instead of always hitting the freshest one.
     """
     try:
         uid = _user_id(ctx)
@@ -107,12 +157,13 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
         active = bool(d.get("active", False))
         running = bool(d.get("running", active))
         state_word = "live" if active else ("parked — terminal offline" if running else "idle")
+        tabs = await _fetch_tabs(uid)
         return ActionResult.success(
             data=CodingRemote(active=active, session_id=d.get("session_id"),
                               enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", []),
                               checked_at=_utc_now_iso(), running=running, mode=d.get("applied_mode"),
                               last_seen=d.get("last_seen"), pending_consent=d.get("pending_consent"),
-                              requested_mode=d.get("requested_mode")),
+                              requested_mode=d.get("requested_mode"), tabs=tabs),
             summary=f"coding session {state_word}; remote {'on' if st.get('enabled') else 'off'}")
     except Exception as e:
         return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}", code="CODING_REMOTE_STATUS_FAILED")
@@ -164,6 +215,11 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
     terminal labels the instruction with its TRUE origin (e.g. ``[telegram]``).
     When the surface is not readable from ctx the field is omitted and the
     gateway applies its default.
+
+    Targeted (T2, W4c 2026-07-20): ``params.session_id`` — when non-empty —
+    rides along so the gateway addresses that ONE tab instead of its own
+    freshest-session pick; omitted (the default) is byte-identical to pre-
+    T2 behavior.
     """
     try:
         uid = _user_id(ctx)
@@ -171,6 +227,8 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
         surface = _turn_surface(ctx)
         if surface:
             body["surface"] = surface
+        if params.session_id:
+            body["session_id"] = params.session_id
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/steer", body)
         if err:
             return ActionResult.error(f"Not sent: {err}", code="CODING_REMOTE_INSTRUCTION_FAILED")
@@ -183,7 +241,7 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
 @chat.function("stop_session", action_type="write", event="coding-remote.stopped",
     description="Stop the running terminal coding session (like pressing Esc in the terminal).",
     data_model=CodingRemote)
-async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
+async def fn_stop(ctx, params: StopParams) -> ActionResult:
     """Stop the acting user's running coding turn — remote Esc.
 
     Always targets ``ctx.user.imperal_id`` — never a caller-supplied user.
@@ -192,10 +250,15 @@ async def fn_stop(ctx, params: EmptyParams) -> ActionResult:
     same conversation. It never needs to be approved twice — one call, one
     cancel. When nothing is running the gateway refuses with an honest no-op
     reason (surfaced as-is, no internal URL/host ever leaked).
+
+    Targeted (T2, W4c 2026-07-20): ``params.session_id`` — when non-empty —
+    stops that ONE tab instead of the gateway's own freshest-session pick;
+    omitted (the default) is byte-identical to pre-T2 behavior (empty body).
     """
     try:
         uid = _user_id(ctx)
-        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/stop", {})
+        body: dict = {"session_id": params.session_id} if params.session_id else {}
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/stop", body)
         if err:
             return ActionResult.error(f"Not stopped: {err}", code="CODING_REMOTE_STOP_FAILED")
         return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
@@ -229,6 +292,11 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
     :func:`_turn_surface`) rides along when readable so the gateway can
     check the autopilot allowlist and tag the flip's true origin; when not
     readable the field is omitted and the gateway applies its default.
+
+    Targeted (T2, W4c 2026-07-20): ``params.session_id`` — when non-empty —
+    rides along so the gateway flips that ONE tab instead of its own
+    freshest-session pick; omitted (the default) is byte-identical to pre-
+    T2 behavior.
     """
     try:
         uid = _user_id(ctx)
@@ -239,6 +307,8 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
         surface = _turn_surface(ctx)
         if surface:
             body["surface"] = surface
+        if params.session_id:
+            body["session_id"] = params.session_id
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/mode", body)
         if err:
             return ActionResult.error(f"Not set: {err}", code="CODING_REMOTE_CODING_MODE_FAILED")
@@ -265,17 +335,28 @@ async def fn_reply_consent(ctx, params: ConsentParams) -> ActionResult:
     through).
 
     When no approval is waiting the gateway answers 404 and this surfaces a
-    clean, honest "no approval is waiting right now" rather than a stale
-    tool/summary carried over from an old read. Any other refusal (e.g. no
-    session to relay into) is surfaced as the gateway's own reason, with no
-    internal URL/host ever leaked.
+    clean, honest "that approval was already answered — the card will
+    refresh" rather than a stale tool/summary carried over from an old read
+    (T2, W4c 2026-07-20: the most common way to hit this is the panel's own
+    card racing a reply the user already sent from elsewhere — the copy
+    tells them the refresh, not a dead end, is coming). Any other refusal
+    (e.g. no session to relay into) is surfaced as the gateway's own reason,
+    with no internal URL/host ever leaked.
+
+    Targeted (T2, W4c 2026-07-20): ``params.session_id`` — when non-empty —
+    answers THAT tab's approval instead of the gateway's own freshest-
+    session pick (ownership-checked server-side, 403 on foreign); omitted
+    (the default) is byte-identical to pre-T2 behavior.
     """
     try:
         uid = _user_id(ctx)
-        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/consent", {"text": params.text})
+        body: dict = {"text": params.text}
+        if params.session_id:
+            body["session_id"] = params.session_id
+        res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/consent", body)
         if err:
             if err.startswith("HTTP 404"):
-                return ActionResult.error("no approval is waiting right now", code="CODING_REMOTE_NO_PENDING_CONSENT")
+                return ActionResult.error("that approval was already answered — the card will refresh", code="CODING_REMOTE_NO_PENDING_CONSENT")
             return ActionResult.error(f"Not sent: {err}", code="CODING_REMOTE_CONSENT_FAILED")
         return ActionResult.success(data=CodingRemote(active=True, session_id=(res or {}).get("session_id")),
                                     summary="reply relayed to your coding session")

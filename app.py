@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.3.2",
+    "coding-remote", version="1.4.0",
     # Federal-rigor scope surface (I-SCOPES-DECLARED-NOT-WILDCARD): this app
     # reads its own remote-control state and writes routing/mode/instructions
     # through the gateway control plane — declare that surface so the kernel
@@ -80,7 +80,15 @@ chat = ChatExtension(
         "pending_consent from get_status (e.g. 'approve'/'decline', or any "
         "free-form reply) — the text is relayed as-is to the session, never "
         "normalized here; if none is waiting it reports an honest no-op, "
-        "and sending a fresh instruction instead will decline it."
+        "and sending a fresh instruction instead will decline it.\n\n"
+        "Multi-tab (v1.4.0): get_status also returns 'tabs' — every RUNNING "
+        "session the user owns (label, live/parked, mode, its own "
+        "pending_consent if any). When the user names a tab ('in the "
+        "billing tab...', 'stop the other one') or more than one tab is "
+        "running, pass that tab's session_id to send_instruction/"
+        "stop_session/set_coding_mode/reply_consent to target it — omitted, "
+        "each of those tools falls back to the most recently active "
+        "session, exactly like before tabs existed."
     ),
 )
 

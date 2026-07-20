@@ -297,7 +297,7 @@ def test_turn_surface_vocab_is_exactly_the_core_four():
 async def test_stop_session_posts_stop_and_reports_ok(make_ctx, gw_mock):
     gw_mock.post(STOP_PATH, json={"ok": True, "session_id": f"coding-{UID}-abc123"})
 
-    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+    res = await h.fn_stop(make_ctx(), h.StopParams())
 
     assert res.status == "success"
     assert gw_mock.was_called("POST", STOP_PATH)
@@ -312,7 +312,7 @@ async def test_stop_session_uses_ctx_user_id_only_never_a_param(make_ctx, gw_moc
     other_uid = "imp_u_OTHER"
     gw_mock.post(f"/v1/internal/coding-remote/{other_uid}/stop", json={"ok": True})
 
-    res = await h.fn_stop(make_ctx(imperal_id=other_uid), h.EmptyParams())
+    res = await h.fn_stop(make_ctx(imperal_id=other_uid), h.StopParams())
     assert res.status == "success"
     assert gw_mock.was_called("POST", f"/v1/internal/coding-remote/{other_uid}/stop")
     assert not gw_mock.was_called("POST", STOP_PATH)
@@ -323,7 +323,7 @@ async def test_stop_session_idle_409_is_honest_clean_error(make_ctx, gw_mock):
     """No running session -> honest no-op error, gateway reason surfaced as-is."""
     gw_mock.post(STOP_PATH, json={"detail": "no running coding turn"}, status=409)
 
-    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+    res = await h.fn_stop(make_ctx(), h.StopParams())
 
     assert res.status == "error"
     assert "409" in res.error
@@ -337,7 +337,7 @@ async def test_stop_session_idle_409_is_honest_clean_error(make_ctx, gw_mock):
 async def test_stop_session_gateway_unreachable_has_no_internal_url(make_ctx, gw_mock):
     gw_mock.error("POST", STOP_PATH, httpx.ConnectError("boom"))
 
-    res = await h.fn_stop(make_ctx(), h.EmptyParams())
+    res = await h.fn_stop(make_ctx(), h.StopParams())
 
     assert res.status == "error"
     assert "104.224" not in res.error
@@ -579,3 +579,5 @@ def test_params_models_have_no_user_id_field():
     assert "user_id" not in h.SetParams.model_fields
     assert "user_id" not in h.SendParams.model_fields
     assert "user_id" not in h.CodingModeParams.model_fields
+    assert "user_id" not in h.StopParams.model_fields
+    assert "user_id" not in h.ConsentParams.model_fields

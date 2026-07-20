@@ -10,6 +10,13 @@ get_status/set_mode/set_coding_mode/send_instruction/stop_session/
 reply_consent handlers the chat tools use — every action bypasses chat and
 invokes the @chat.function directly, so there is exactly one code path for
 every write, chat or panel.
+
+Since v1.4.0 (T2, W4c 2026-07-20) the panel is the tab control center: a
+Tabs section lists every RUNNING session the user owns (label, live/offline
+glyph, mode, its OWN pending approval if any) with per-tab Approve/Decline/
+Stop, and the Send form gains a tab picker once there is more than one —
+every write tool now accepts an optional session_id so any of these can
+target a specific tab instead of the gateway's freshest-session guess.
 """
 from __future__ import annotations
 
@@ -109,24 +116,96 @@ def _fmt_checked_at(checked_at: str | None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _approval_section(pending: dict) -> ui.Section:
+def _approval_section(pending: dict, session_id: str | None) -> ui.Section:
     """Render the pending consent request + Approve/Decline. ``pending`` is
     ``CodingRemote.pending_consent`` — {req_id, tool, summary, since}. The
     label is built from tool+summary as-provided by the gateway (FACTS from
-    the kernel), never invented here. Both buttons call reply_consent
-    directly with a fixed, honest text ('approve'/'decline') — the same
-    single code path the chat tool uses, ICNLI raw-words relay."""
+    the kernel), never invented here.
+
+    ``session_id`` (T2, W4c 2026-07-20 consent-staleness fix c) — the TOP-
+    LEVEL status read's own resolved session (the SAME session
+    ``pending_consent`` was read for) — rides along explicitly on both
+    buttons instead of leaving it to the gateway's freshest-session
+    resolution. Single-tab and multi-tab behave identically either way
+    today, but pinning it here removes any race between "the card was
+    rendered for session A" and "freshest just became session B" — the
+    click always answers the approval that is actually on screen. Both
+    buttons still call reply_consent directly with a fixed, honest text
+    ('approve'/'decline') — the same single code path the chat tool uses,
+    ICNLI raw-words relay."""
     tool = (pending or {}).get("tool") or ""
     summary = (pending or {}).get("summary") or ""
     label = f"{tool} — {summary}" if tool and summary else (summary or tool or "your coding session is waiting for your approval")
+    approve_kwargs = {"text": "approve"}
+    decline_kwargs = {"text": "decline"}
+    if session_id:
+        approve_kwargs["session_id"] = session_id
+        decline_kwargs["session_id"] = session_id
     return ui.Section(title="Approval pending", children=[
         ui.Alert(message=label, type="warn"),
         ui.Stack(direction="h", gap=1, children=[
-            ui.Button(label="Approve", variant="primary", on_click=ui.Call("reply_consent", text="approve")),
-            ui.Button(label="Decline", variant="secondary", on_click=ui.Call("reply_consent", text="decline")),
+            ui.Button(label="Approve", variant="primary", on_click=ui.Call("reply_consent", **approve_kwargs)),
+            ui.Button(label="Decline", variant="secondary", on_click=ui.Call("reply_consent", **decline_kwargs)),
         ]),
         ui.Text(content="sending a new instruction instead will decline this approval", variant="caption"),
     ])
+
+
+def _tab_label(tab) -> str:
+    """PURE. Effective display label for a tab (T2, W4c 2026-07-20). The
+    gateway's own label wins once the terminal has reported one (T3/0.3.25
+    client work); until then ``label`` is ``None`` (T1 gateway report,
+    contract note) and this renders the browser-tab-style fallback the
+    report calls for explicitly — ``kind + (slot or 'main')`` — so a tab
+    row is never blank."""
+    if tab.label:
+        return tab.label
+    return f"{tab.kind or 'session'} {tab.slot or 'main'}"
+
+
+def _tab_row(tab) -> ui.Stack:
+    """One row of the Tabs section: a glyph+label+mode line plus per-tab
+    action buttons. ``●`` = terminal_online (T1 gateway report: this can be
+    true for more than one tab at once in a genuine multi-tab session —
+    never assumed "at most one online" here), ``○`` = not. Approve/Decline
+    render only when THIS tab has its own pending_consent — a multi-tab user
+    can have more than one approval waiting at once, each answered
+    independently. Stop always renders — same remote-Esc semantics as the
+    Session card's Stop button, scoped to this one tab via session_id."""
+    glyph = "●" if tab.terminal_online else "○"
+    mode_txt = tab.mode or "mode?"
+    line = f"{glyph} {_tab_label(tab)} · {mode_txt}"
+    if tab.pending_consent:
+        line += " · ⚠ approval pending"
+    actions = []
+    if tab.pending_consent:
+        actions.append(ui.Button(
+            label="Approve", variant="primary", size="sm",
+            on_click=ui.Call("reply_consent", text="approve", session_id=tab.session_id)))
+        actions.append(ui.Button(
+            label="Decline", variant="secondary", size="sm",
+            on_click=ui.Call("reply_consent", text="decline", session_id=tab.session_id)))
+    actions.append(ui.Button(
+        label="Stop", variant="danger", size="sm", icon="Square",
+        on_click=ui.Call("stop_session", session_id=tab.session_id)))
+    return ui.Stack(direction="v", gap=1, children=[
+        ui.Text(content=line),
+        ui.Stack(direction="h", gap=1, children=actions),
+    ])
+
+
+def _tabs_section(tabs: list) -> ui.Section | None:
+    """The Tabs section (T2, W4c 2026-07-20) — renders when there is more
+    than one tab, OR any tab (even a lone one) has its own pending_consent
+    (so a per-tab Approve/Decline is always reachable, not just the
+    top-level Approval-pending card). A genuine single-tab user with
+    nothing pending sees no Tabs section at all — v1.3.2 behavior,
+    unchanged."""
+    if not tabs:
+        return None
+    if len(tabs) <= 1 and not any(t.pending_consent for t in tabs):
+        return None
+    return ui.Section(title="Tabs", children=[_tab_row(t) for t in tabs])
 
 
 @ext.panel(
@@ -155,11 +234,15 @@ async def coding_remote_control_panel(ctx, **kwargs):
     directly); a row of route buttons (Telegram/Panel/Both/Off — each calls
     set_mode directly); a row of coding-mode buttons (Default/Plan/
     Autopilot — each calls set_coding_mode directly, highlighting the REAL
-    applied mode once the terminal ACKs one); and a text box to send an
-    instruction into the session (calls send_instruction directly). Steer/
-    mode/send controls stay enabled whenever the session is running, live
-    or parked — only Idle disables them. No local computation of session
-    state — always the gateway's live answer via get_status.
+    applied mode once the terminal ACKs one); a Tabs section (v1.4.0, T2)
+    listing every RUNNING session with per-tab Approve/Decline/Stop when
+    there is more than one tab or any tab has its own pending approval; and
+    a text box (plus a tab-target Select once there is more than one tab)
+    to send an instruction into the session (calls send_instruction
+    directly). Steer/mode/send controls stay enabled whenever the session
+    is running, live or parked — only Idle disables them. No local
+    computation of session state — always the gateway's live answer via
+    get_status.
     """
     uid = _user_id(ctx)
     try:
@@ -225,7 +308,25 @@ async def coding_remote_control_panel(ctx, **kwargs):
     ]
 
     if pending:
-        children.append(_approval_section(pending))
+        children.append(_approval_section(pending, data.session_id))
+
+    tabs = list(getattr(data, "tabs", None) or [])
+    tabs_section = _tabs_section(tabs)
+    if tabs_section is not None:
+        children.append(tabs_section)
+
+    # Send-to (T2, W4c 2026-07-20): with more than one tab, the Send form
+    # gains a Select so an instruction can be aimed at a chosen tab instead
+    # of always landing on the gateway's freshest-session pick. A single tab
+    # keeps the plain text box exactly as v1.3.2 — no Select clutter for the
+    # common case.
+    send_children = [ui.Input(placeholder="Type an instruction for your coding session…", param_name="text")]
+    if len(tabs) > 1:
+        send_children.append(ui.Select(
+            options=[{"value": t.session_id, "label": _tab_label(t)} for t in tabs],
+            param_name="session_id",
+            placeholder="Target tab (optional — defaults to the most recently active)",
+        ))
 
     children.extend([
         ui.Section(title="Route", children=[_route_buttons(route_mode)]),
@@ -234,9 +335,7 @@ async def coding_remote_control_panel(ctx, **kwargs):
             ui.Form(
                 action="send_instruction",
                 submit_label="Send",
-                children=[
-                    ui.Input(placeholder="Type an instruction for your coding session…", param_name="text"),
-                ],
+                children=send_children,
             ),
         ]),
     ])

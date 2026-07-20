@@ -2,7 +2,47 @@
 from __future__ import annotations
 
 from imperal_sdk import sdl
-from pydantic import model_validator
+from pydantic import BaseModel, Field, model_validator
+
+
+class CodingTab(BaseModel):
+    """One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c
+    2026-07-20) — a tab in the user's coding-session inventory, everything
+    the panel's Tabs section needs to render a row and target it with a
+    session-scoped write. Nested list field, plain BaseModel (not
+    ``sdl.Entity``) — same convention as other exts' list-of-rows fields
+    (e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);
+    the top-level ``CodingRemote`` already carries the ``x-sdl: entity``
+    marker, a row doesn't need its own.
+
+    ``label`` is ``None`` until the terminal has polled with ``&label=`` at
+    least once (T3/0.3.25 client work); render the gateway T1 report's own
+    fallback — ``kind + (slot or 'main')`` — instead of a blank row (see
+    ``panels._tab_label``).
+
+    ``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s
+    single-value liveness pointer: it also credits live-session-registry
+    freshness, so a genuine multi-tab session can legitimately show more
+    than one row with ``terminal_online: true`` at once — never assume "at
+    most one online" here (T1 gateway report, contract note).
+
+    ``mode`` mirrors the gateway's ``applied_mode`` for THIS session,
+    named to match ``CodingRemote.mode`` (the freshest-session twin of this
+    same fact) rather than the gateway's own ``applied_mode`` key.
+
+    ``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped
+    to THIS tab — a multi-tab user can have more than one approval waiting
+    at once, each answerable independently via
+    ``reply_consent(session_id=...)``."""
+    session_id: str
+    slot: str = ""
+    kind: str = ""
+    label: str | None = None
+    terminal_online: bool = False
+    mode: str | None = None
+    requested_mode: str | None = None
+    pending_consent: dict | None = None
+    started: str | None = None
 
 
 class CodingRemote(sdl.Entity):
@@ -53,6 +93,7 @@ class CodingRemote(sdl.Entity):
     last_seen: int | None = None  # epoch seconds (gateway pointer TTL truth) — v1.3.1: was mistyped str, ValidationError whenever the terminal was ONLINE
     pending_consent: dict | None = None
     requested_mode: str | None = None  # v1.3.2: gateway's non-destructive peek of a NOT-YET-APPLIED remote mode request — the panel renders «(applying…)» until the terminal's next check-in pops it
+    tabs: list[CodingTab] = Field(default_factory=list)  # v1.4.0 (T2, W4c): per-tab inventory from GET .../sessions — every RUNNING session the user owns, enriched for the panel's Tabs section (see CodingTab). Empty when the inventory fetch fails or the user has no tabs at all — fail-soft, never blocks the rest of get_status (fn_status fetches it best-effort).
 
     @model_validator(mode="before")
     @classmethod
