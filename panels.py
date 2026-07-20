@@ -12,11 +12,27 @@ invokes the @chat.function directly, so there is exactly one code path for
 every write, chat or panel.
 
 Since v1.4.0 (T2, W4c 2026-07-20) the panel is the tab control center: a
-Tabs section lists every RUNNING session the user owns (label, live/offline
-glyph, mode, its OWN pending approval if any) with per-tab Approve/Decline/
-Stop, and the Send form gains a tab picker once there is more than one —
-every write tool now accepts an optional session_id so any of these can
-target a specific tab instead of the gateway's freshest-session guess.
+Tabs section lists every open tab the user has (label, live/offline glyph,
+its own status, mode, its OWN pending approval if any) with per-tab
+Approve/Decline/Stop, and the Send form gains a tab picker once there is
+more than one — every write tool now accepts an optional session_id so any
+of these can target a specific tab instead of the gateway's freshest-
+session guess.
+
+v1.4.1 (W4c follow-up, same day — live feedback: "panel doesn't show tabs,
+Stop is unclear"): the Tabs section now renders whenever there is at least
+one tab AT ALL — even exactly one, with nothing pending — because
+visibility of what is actually open was the whole point Valentin flagged;
+previously it only appeared for >1 tab or a pending approval, so a single-
+tab user (the common case) never saw it. Each row also shows the tab's own
+lifecycle status (running/parked/idle — see CodingTab.status), and a
+per-tab Stop only renders while that tab is running or parked (an idle tab
+has nothing to stop). When there are truly no open tabs at all (and the
+top-level read agrees nothing is running), the panel says so honestly
+instead of silently omitting the section. The Session card's Stop button
+also gained a caption line explaining what it actually does — Valentin's
+other complaint, that "Stop" alone reads as ambiguous (stop the whole
+session? just the run?).
 """
 from __future__ import annotations
 
@@ -163,18 +179,43 @@ def _tab_label(tab) -> str:
     return f"{tab.kind or 'session'} {tab.slot or 'main'}"
 
 
+# Lifecycle glyph+word per tab.status (v1.4.1, W4c follow-up) — mirrors the
+# ○/● terminal_online glyph convention already in this row, and the
+# 'mode?'-style honest placeholder convention for a value the gateway
+# hasn't sent yet (see _tab_status_text).
+_STATUS_GLYPH_WORD = {
+    "running": "▶ running",
+    "parked": "⏸ parked",
+    "idle": "○ idle",
+}
+
+
+def _tab_status_text(tab) -> str:
+    """PURE. Effective status text for a tab row. ``tab.status`` is the
+    gateway's own lifecycle word for this one tab (v1.4.1) — glyph+word
+    mapped for known values, or an honest "status?" placeholder when the
+    gateway hasn't sent the field yet (older gateway / deploy transition),
+    same never-guess convention as ``mode`` ("mode?" when unset) — never
+    inferred from terminal_online or any other field."""
+    return _STATUS_GLYPH_WORD.get(tab.status, tab.status or "status?")
+
+
 def _tab_row(tab) -> ui.Stack:
-    """One row of the Tabs section: a glyph+label+mode line plus per-tab
-    action buttons. ``●`` = terminal_online (T1 gateway report: this can be
-    true for more than one tab at once in a genuine multi-tab session —
-    never assumed "at most one online" here), ``○`` = not. Approve/Decline
-    render only when THIS tab has its own pending_consent — a multi-tab user
-    can have more than one approval waiting at once, each answered
-    independently. Stop always renders — same remote-Esc semantics as the
+    """One row of the Tabs section: a glyph+label+status+mode line plus
+    per-tab action buttons. ``●`` = terminal_online (T1 gateway report: this
+    can be true for more than one tab at once in a genuine multi-tab
+    session — never assumed "at most one online" here), ``○`` = not.
+    Approve/Decline render only when THIS tab has its own pending_consent —
+    a multi-tab user can have more than one approval waiting at once, each
+    answered independently. Stop (v1.4.1, W4c follow-up) renders only while
+    THIS tab's own status is running or parked — an idle tab (terminal
+    open, nothing running) has no run to stop, so no Stop button is shown
+    for it; when it does render it is the same remote-Esc semantics as the
     Session card's Stop button, scoped to this one tab via session_id."""
     glyph = "●" if tab.terminal_online else "○"
     mode_txt = tab.mode or "mode?"
-    line = f"{glyph} {_tab_label(tab)} · {mode_txt}"
+    status_txt = _tab_status_text(tab)
+    line = f"{glyph} {_tab_label(tab)} · {status_txt} · {mode_txt}"
     if tab.pending_consent:
         line += " · ⚠ approval pending"
     actions = []
@@ -185,9 +226,10 @@ def _tab_row(tab) -> ui.Stack:
         actions.append(ui.Button(
             label="Decline", variant="secondary", size="sm",
             on_click=ui.Call("reply_consent", text="decline", session_id=tab.session_id)))
-    actions.append(ui.Button(
-        label="Stop", variant="danger", size="sm", icon="Square",
-        on_click=ui.Call("stop_session", session_id=tab.session_id)))
+    if tab.status in ("running", "parked"):
+        actions.append(ui.Button(
+            label="Stop", variant="danger", size="sm", icon="Square",
+            on_click=ui.Call("stop_session", session_id=tab.session_id)))
     return ui.Stack(direction="v", gap=1, children=[
         ui.Text(content=line),
         ui.Stack(direction="h", gap=1, children=actions),
@@ -195,15 +237,14 @@ def _tab_row(tab) -> ui.Stack:
 
 
 def _tabs_section(tabs: list) -> ui.Section | None:
-    """The Tabs section (T2, W4c 2026-07-20) — renders when there is more
-    than one tab, OR any tab (even a lone one) has its own pending_consent
-    (so a per-tab Approve/Decline is always reachable, not just the
-    top-level Approval-pending card). A genuine single-tab user with
-    nothing pending sees no Tabs section at all — v1.3.2 behavior,
-    unchanged."""
+    """The Tabs section — renders whenever there is at least one open tab
+    at all (v1.4.1, W4c follow-up: was previously gated on >1 tab or a
+    pending consent, so the common single-tab case never showed it —
+    visibility of what is actually open is the whole point). Genuinely no
+    tabs (empty list) renders no section here — the panel's bottom-of-page
+    empty-state line (see coding_remote_control_panel) covers that case
+    honestly instead."""
     if not tabs:
-        return None
-    if len(tabs) <= 1 and not any(t.pending_consent for t in tabs):
         return None
     return ui.Section(title="Tabs", children=[_tab_row(t) for t in tabs])
 
@@ -229,20 +270,26 @@ async def coding_remote_control_panel(ctx, **kwargs):
     (running but the terminal is offline — steer/mode/send still reach it)
     or Idle (nothing running at all); the effective routing (mirror/steer);
     a Stop button (remote Esc — calls stop_session directly, cancels the
-    current run only); an Approval-pending section with Approve/Decline
-    when the session is waiting on a consent reply (calls reply_consent
-    directly); a row of route buttons (Telegram/Panel/Both/Off — each calls
-    set_mode directly); a row of coding-mode buttons (Default/Plan/
-    Autopilot — each calls set_coding_mode directly, highlighting the REAL
-    applied mode once the terminal ACKs one); a Tabs section (v1.4.0, T2)
-    listing every RUNNING session with per-tab Approve/Decline/Stop when
-    there is more than one tab or any tab has its own pending approval; and
-    a text box (plus a tab-target Select once there is more than one tab)
-    to send an instruction into the session (calls send_instruction
-    directly). Steer/mode/send controls stay enabled whenever the session
-    is running, live or parked — only Idle disables them. No local
-    computation of session state — always the gateway's live answer via
-    get_status.
+    current run only, with a caption line explaining that the session and
+    its history survive, added v1.4.1 W4c follow-up after live feedback
+    that "Stop" alone read as ambiguous) that is disabled unless the
+    top-level read OR some tab is running/parked; an Approval-pending
+    section with Approve/Decline when the session is waiting on a consent
+    reply (calls reply_consent directly); a row of route buttons (Telegram/
+    Panel/Both/Off — each calls set_mode directly); a row of coding-mode
+    buttons (Default/Plan/Autopilot — each calls set_coding_mode directly,
+    highlighting the REAL applied mode once the terminal ACKs one); a Tabs
+    section (v1.4.0, T2; v1.4.1 W4c follow-up: now renders for ANY non-empty
+    tab list, even a lone tab with nothing pending — visibility of what is
+    actually open was the point of the fix) listing every open tab with its
+    own status (running/parked/idle) and per-tab Approve/Decline/Stop (Stop
+    only while that tab is running or parked); an honest empty-state line
+    when there are truly no open tabs at all; and a text box (plus a
+    tab-target Select once there is more than one tab) to send an
+    instruction into the session (calls send_instruction directly). Steer/
+    mode/send controls stay enabled whenever the session is running, live
+    or parked — only Idle disables them. No local computation of session
+    state — always the gateway's live answer via get_status.
     """
     uid = _user_id(ctx)
     try:
@@ -264,6 +311,7 @@ async def coding_remote_control_panel(ctx, **kwargs):
     applied_mode = data.mode
     pending = data.pending_consent
     route_mode = _current_mode(data.mirror, data.steer, bool(data.enabled))
+    tabs = list(getattr(data, "tabs", None) or [])
 
     if active:
         session_label, session_color = "Live", "green"
@@ -287,6 +335,13 @@ async def coding_remote_control_panel(ctx, **kwargs):
         coding_mode_children.append(
             ui.Text(content="mode unknown — terminal hasn't reported yet", variant="caption"))
 
+    # Stop disabled unless SOMETHING is actually stoppable (v1.4.1, W4c
+    # follow-up): the top-level read (running, unchanged pre-tabs signal —
+    # keeps this true when the /sessions fetch fails soft and tabs is
+    # empty) OR any per-tab status is running/parked (catches a genuine
+    # multi-tab case where a non-freshest tab is still running/parked).
+    stop_disabled = not (running or any(t.status in ("running", "parked") for t in tabs))
+
     children = [
         ui.Card(
             title="Session",
@@ -296,21 +351,29 @@ async def coding_remote_control_panel(ctx, **kwargs):
             ]),
             # Remote Esc — cancels the current run only (session/thread
             # survive). Calls stop_session directly, the same single code
-            # path the chat tool uses; disabled only while nothing is
-            # running at all (enabled while parked — the gateway reaches
-            # parked sessions too).
-            footer=ui.Button(
-                label="Stop", variant="danger", size="sm", icon="Square",
-                disabled=not running,
-                on_click=ui.Call("stop_session"),
-            ),
+            # path the chat tool uses; disabled only while nothing anywhere
+            # is running/parked (enabled while parked — the gateway reaches
+            # parked sessions too). Caption line (v1.4.1, W4c follow-up,
+            # live feedback: "Stop is unclear") spells out what Stop
+            # actually does — never lets the bare label carry that alone.
+            footer=ui.Stack(direction="v", gap=1, children=[
+                ui.Button(
+                    label="Stop", variant="danger", size="sm", icon="Square",
+                    disabled=stop_disabled,
+                    on_click=ui.Call("stop_session"),
+                ),
+                ui.Text(
+                    content="stops the current run — like pressing Esc in the terminal; "
+                            "the session and its history survive",
+                    variant="caption",
+                ),
+            ]),
         ),
     ]
 
     if pending:
         children.append(_approval_section(pending, data.session_id))
 
-    tabs = list(getattr(data, "tabs", None) or [])
     tabs_section = _tabs_section(tabs)
     if tabs_section is not None:
         children.append(tabs_section)
@@ -340,9 +403,16 @@ async def coding_remote_control_panel(ctx, **kwargs):
         ]),
     ])
 
-    if not running:
+    # Empty state (v1.4.1, W4c follow-up): tabs is now the more accurate
+    # "is anything open at all" signal — it includes idle tabs (terminal
+    # open, nothing running), which running alone never counted. Gated on
+    # BOTH `not tabs` and `not running` on purpose: a tabs fetch that failed
+    # soft (empty list) while the top-level read says a session IS running
+    # must never be reported as "no open tabs" — that would be a fabricated
+    # claim contradicting the Session card right above it.
+    if not tabs and not running:
         children.append(ui.Alert(
-            message="No coding session is live right now — start one from your terminal to steer it here.",
+            message="no open tabs — open Webbee Code in a terminal (or send an instruction to start one)",
             type="info",
         ))
 

@@ -366,7 +366,11 @@ async def test_panel_idle_session_stat_says_idle(make_ctx, gw_mock):
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
     assert '"value": "Idle"' in flat
-    assert "No coding session is live right now" in flat
+    # v1.4.1 (W4c follow-up): the "no session live" copy was replaced by an
+    # honest "no open tabs" empty state, keyed off the tabs signal (this
+    # test's /sessions route is unmocked -> fails soft -> tabs == []) rather
+    # than the old running-only check.
+    assert "no open tabs" in flat
 
 
 @pytest.mark.asyncio

@@ -17,7 +17,7 @@ AUTH_GW = os.getenv("IMPERAL_GATEWAY_URL", "http://104.224.88.155:8085")
 AUTH_SERVICE_TOKEN = os.getenv("AUTH_SERVICE_TOKEN", "")
 
 ext = Extension(
-    "coding-remote", version="1.4.0",
+    "coding-remote", version="1.4.1",
     # Federal-rigor scope surface (I-SCOPES-DECLARED-NOT-WILDCARD): this app
     # reads its own remote-control state and writes routing/mode/instructions
     # through the gateway control plane — declare that surface so the kernel
@@ -81,14 +81,19 @@ chat = ChatExtension(
         "free-form reply) — the text is relayed as-is to the session, never "
         "normalized here; if none is waiting it reports an honest no-op, "
         "and sending a fresh instruction instead will decline it.\n\n"
-        "Multi-tab (v1.4.0): get_status also returns 'tabs' — every RUNNING "
-        "session the user owns (label, live/parked, mode, its own "
-        "pending_consent if any). When the user names a tab ('in the "
-        "billing tab...', 'stop the other one') or more than one tab is "
-        "running, pass that tab's session_id to send_instruction/"
-        "stop_session/set_coding_mode/reply_consent to target it — omitted, "
-        "each of those tools falls back to the most recently active "
-        "session, exactly like before tabs existed."
+        "Multi-tab (v1.4.0, widened v1.4.1): get_status also returns "
+        "'tabs' — every OPEN tab the user has, each with its own status: "
+        "'running' (a turn is executing), 'parked' (a session exists but "
+        "the terminal is offline — still steerable), or 'idle' (the "
+        "terminal is open with nothing running right now). Idle tabs are "
+        "real now — say a tab 'is idle' when that's the status, never call "
+        "an idle tab 'live' or 'running'. Each tab also carries a label, "
+        "mode, and its own pending_consent if any. When the user names a "
+        "tab ('in the billing tab...', 'stop the other one') or more than "
+        "one tab is running, pass that tab's session_id to "
+        "send_instruction/stop_session/set_coding_mode/reply_consent to "
+        "target it — omitted, each of those tools falls back to the most "
+        "recently active session, exactly like before tabs existed."
     ),
 )
 

@@ -2,7 +2,7 @@
   "manifest_schema_version": 3,
   "sdk_version": "5.9.12",
   "app_id": "coding-remote",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "name": "Coding Remote",
   "description": "Control your terminal Webbee Code session remotely — mirror it to Telegram or the panel and steer it back.",
   "icon": "icon.svg",
@@ -29,7 +29,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -110,6 +110,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [
@@ -368,7 +373,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -449,6 +454,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [
@@ -713,7 +723,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -794,6 +804,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [
@@ -1050,7 +1065,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -1131,6 +1146,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [
@@ -1395,7 +1415,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -1476,6 +1496,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [
@@ -1740,7 +1765,7 @@
       "return_schema": {
         "$defs": {
           "CodingTab": {
-            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.",
+            "description": "One row of ``GET /v1/internal/coding-remote/{uid}/sessions`` (T2, W4c\n2026-07-20) — a tab in the user's coding-session inventory, everything\nthe panel's Tabs section needs to render a row and target it with a\nsession-scoped write. Nested list field, plain BaseModel (not\n``sdl.Entity``) — same convention as other exts' list-of-rows fields\n(e.g. ``imperal-ext-automations`` ``CatalogEntry``/``CapabilityEntry``);\nthe top-level ``CodingRemote`` already carries the ``x-sdl: entity``\nmarker, a row doesn't need its own.\n\n``label`` is ``None`` until the terminal has polled with ``&label=`` at\nleast once (T3/0.3.25 client work); render the gateway T1 report's own\nfallback — ``kind + (slot or 'main')`` — instead of a blank row (see\n``panels._tab_label``).\n\n``terminal_online`` is a WIDER truth than ``CodingRemote.active``'s\nsingle-value liveness pointer: it also credits live-session-registry\nfreshness, so a genuine multi-tab session can legitimately show more\nthan one row with ``terminal_online: true`` at once — never assume \"at\nmost one online\" here (T1 gateway report, contract note).\n\n``mode`` mirrors the gateway's ``applied_mode`` for THIS session,\nnamed to match ``CodingRemote.mode`` (the freshest-session twin of this\nsame fact) rather than the gateway's own ``applied_mode`` key.\n\n``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped\nto THIS tab — a multi-tab user can have more than one approval waiting\nat once, each answerable independently via\n``reply_consent(session_id=...)``.\n\n``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own\nlifecycle word for THIS tab: ``\"running\"`` (a turn is actively\nexecuting), ``\"parked\"`` (a session/marathon exists but the terminal is\noffline — same \"parked\" concept as ``CodingRemote.running`` minus\n``active``, scoped to this one tab), or ``\"idle\"`` (the terminal is open\nwith no active run — these rows did NOT appear in the inventory before\nthis gateway contract version; only running/parked tabs did). ``\"\"`` is\nthe honest \"the gateway hasn't sent this field yet\" default for an\nolder gateway — never guessed from other fields (never inferred from\n``terminal_online``, which is a different, wider liveness signal).",
             "properties": {
               "session_id": {
                 "title": "Session Id",
@@ -1821,6 +1846,11 @@
                 ],
                 "default": null,
                 "title": "Started"
+              },
+              "status": {
+                "default": "",
+                "title": "Status",
+                "type": "string"
               }
             },
             "required": [

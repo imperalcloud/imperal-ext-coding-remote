@@ -113,16 +113,18 @@ def _row_to_tab(row: dict) -> CodingTab:
         label=row.get("label"), terminal_online=bool(row.get("terminal_online", False)),
         mode=row.get("applied_mode"), requested_mode=row.get("requested_mode"),
         pending_consent=row.get("pending_consent"), started=row.get("started"),
+        status=row.get("status", ""),
     )
 
 
 async def _fetch_tabs(uid: str) -> list[CodingTab]:
-    """Best-effort per-tab inventory (T2, W4c 2026-07-20) — GET
-    .../{uid}/sessions. Fail-soft BY DESIGN: any error (network hiccup, an
-    older gateway without the route, a malformed row) yields an empty list
-    rather than failing the whole get_status read — the Tabs section is
-    additive, never load-bearing for the rest of the status card. Never
-    raises."""
+    """Best-effort per-tab inventory (T2, W4c 2026-07-20; W4c v1.4.1
+    follow-up: rows now include idle tabs too — a terminal open with no
+    active run — not just running/parked ones) — GET .../{uid}/sessions.
+    Fail-soft BY DESIGN: any error (network hiccup, an older gateway without
+    the route, a malformed row) yields an empty list rather than failing the
+    whole get_status read — the Tabs section is additive, never load-bearing
+    for the rest of the status card. Never raises."""
     try:
         d = await gw_get(f"/v1/internal/coding-remote/{uid}/sessions")
         return [_row_to_tab(row) for row in d.get("sessions", [])]
@@ -145,10 +147,14 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
     where session output is echoed, ``steer`` — where replies can drive it
     back), the applied consent ``mode`` (``None`` until the terminal reports
     one), any ``pending_consent`` waiting on a reply, ``last_seen`` for the
-    terminal pointer, and ``tabs`` (T2, W4c 2026-07-20) — every RUNNING
-    session the user owns (see :class:`CodingTab`), so the brain/panel can
-    name a specific tab to the write tools below via their optional
-    ``session_id`` param instead of always hitting the freshest one.
+    terminal pointer, and ``tabs`` (T2, W4c 2026-07-20; v1.4.1 follow-up) —
+    every OPEN tab the user has, each carrying its own ``status``
+    (``"running"`` / ``"parked"`` / ``"idle"`` — idle means the terminal is
+    open with nothing actively running, see :class:`CodingTab`), so the
+    brain/panel can name a specific tab to the write tools below via their
+    optional ``session_id`` param instead of always hitting the freshest
+    one, and can say e.g. "the billing tab is idle" from the FACT rather
+    than guessing it from ``mode``/``terminal_online`` alone.
     """
     try:
         uid = _user_id(ctx)

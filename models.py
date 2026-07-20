@@ -33,7 +33,18 @@ class CodingTab(BaseModel):
     ``pending_consent`` mirrors ``CodingRemote.pending_consent`` but scoped
     to THIS tab — a multi-tab user can have more than one approval waiting
     at once, each answerable independently via
-    ``reply_consent(session_id=...)``."""
+    ``reply_consent(session_id=...)``.
+
+    ``status`` (v1.4.1, W4c 2026-07-20 follow-up) is the gateway's own
+    lifecycle word for THIS tab: ``"running"`` (a turn is actively
+    executing), ``"parked"`` (a session/marathon exists but the terminal is
+    offline — same "parked" concept as ``CodingRemote.running`` minus
+    ``active``, scoped to this one tab), or ``"idle"`` (the terminal is open
+    with no active run — these rows did NOT appear in the inventory before
+    this gateway contract version; only running/parked tabs did). ``""`` is
+    the honest "the gateway hasn't sent this field yet" default for an
+    older gateway — never guessed from other fields (never inferred from
+    ``terminal_online``, which is a different, wider liveness signal)."""
     session_id: str
     slot: str = ""
     kind: str = ""
@@ -43,6 +54,7 @@ class CodingTab(BaseModel):
     requested_mode: str | None = None
     pending_consent: dict | None = None
     started: str | None = None
+    status: str = ""
 
 
 class CodingRemote(sdl.Entity):
@@ -93,7 +105,7 @@ class CodingRemote(sdl.Entity):
     last_seen: int | None = None  # epoch seconds (gateway pointer TTL truth) — v1.3.1: was mistyped str, ValidationError whenever the terminal was ONLINE
     pending_consent: dict | None = None
     requested_mode: str | None = None  # v1.3.2: gateway's non-destructive peek of a NOT-YET-APPLIED remote mode request — the panel renders «(applying…)» until the terminal's next check-in pops it
-    tabs: list[CodingTab] = Field(default_factory=list)  # v1.4.0 (T2, W4c): per-tab inventory from GET .../sessions — every RUNNING session the user owns, enriched for the panel's Tabs section (see CodingTab). Empty when the inventory fetch fails or the user has no tabs at all — fail-soft, never blocks the rest of get_status (fn_status fetches it best-effort).
+    tabs: list[CodingTab] = Field(default_factory=list)  # v1.4.0 (T2, W4c): per-tab inventory from GET .../sessions, enriched for the panel's Tabs section (see CodingTab). v1.4.1 (W4c follow-up): the gateway now includes IDLE tabs too (terminal open, no active run) — no longer "every RUNNING session only", see CodingTab.status. Empty when the inventory fetch fails or the user genuinely has no open tabs at all — fail-soft, never blocks the rest of get_status (fn_status fetches it best-effort).
 
     @model_validator(mode="before")
     @classmethod

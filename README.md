@@ -10,8 +10,9 @@ session from chat or the panel — while it keeps running on your machine.
   (a session/marathon exists but the terminal is offline), or idle (none at
   all); how it is routed (mirror = where output is echoed, steer = where
   replies can drive it back); the applied consent mode; any pending
-  approval waiting for a reply; and `tabs` — every running session the
-  user owns (label, live/parked, mode, its own pending approval if any).
+  approval waiting for a reply; and `tabs` — every open tab the user has,
+  each with its own status (`running` / `parked` / `idle`), label, mode,
+  and its own pending approval if any.
 - `set_mode` (write) — route the session: `tg` (mirror+steer via Telegram),
   `panel` (mirror+steer via the panel), `both` (mirror to both, steer via
   Telegram AND the panel), or `off` (turn remote control off). Steer reaches
@@ -42,14 +43,17 @@ active session.
 ## Panel
 
 A control page (left slot) showing live/parked/idle session status, a Stop
-button (remote Esc), an Approval-pending section with Approve/Decline when
-a consent reply is waiting, a Tabs section (once there is more than one
-running session, or any session has its own pending approval — label,
-live/offline glyph, mode, and per-tab Approve/Decline/Stop), route buttons
-(Telegram/Panel/Both/Off), coding-mode buttons (Default/Plan/Autopilot —
-highlighting the REAL applied mode once the terminal ACKs one), and a send
-box (with a tab picker once there is more than one tab) — this extension
-IS the control surface, so it stays visible in the sidebar. Steer/mode/send
+button (remote Esc, with a caption explaining it cancels only the current
+run — the session and its history survive), an Approval-pending section
+with Approve/Decline when a consent reply is waiting, a Tabs section
+(renders whenever the user has at least one open tab, even just one —
+label, live/offline glyph, status, mode, and per-tab Approve/Decline/Stop;
+Stop only while that tab is running or parked) with an honest empty-state
+line when there are truly no open tabs at all, route buttons (Telegram/
+Panel/Both/Off), coding-mode buttons (Default/Plan/Autopilot — highlighting
+the REAL applied mode once the terminal ACKs one), and a send box (with a
+tab picker once there is more than one tab) — this extension IS the
+control surface, so it stays visible in the sidebar. Steer/mode/send
 controls stay enabled whenever a session is running, live or parked.
 
 ## Access
