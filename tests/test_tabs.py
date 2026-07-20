@@ -707,3 +707,132 @@ async def test_panel_no_empty_state_line_when_an_idle_tab_is_open(make_ctx, gw_m
 
     assert "no open tabs" not in flat
     assert '"title": "Tabs"' in flat
+
+
+# ─── v1.5.0: per-tab coding-mode segment + global section as fallback ──── #
+# Valentin's live feedback: "I want to change coding mode PER TAB, each tab
+# its own full control, so the user sees EVERYTHING properly." Every
+# running/parked tab row now carries its OWN Default/Plan/Autopilot segment
+# (targeted by session_id via the same set_coding_mode path); the global
+# Coding-mode section becomes a fail-soft fallback shown only when the
+# per-tab inventory is unavailable.
+
+def _all_buttons(tree) -> list[dict]:
+    out = []
+    if isinstance(tree, dict):
+        if tree.get("type") == "Button":
+            out.append(tree["props"])
+        for v in tree.values():
+            out.extend(_all_buttons(v))
+    elif isinstance(tree, list):
+        for v in tree:
+            out.extend(_all_buttons(v))
+    return out
+
+
+def _coding_mode_buttons_of(tree) -> list[dict]:
+    """Every set_coding_mode Button in the tree (function == 'set_coding_mode'
+    in the serialized Call) — distinguishes them from the route buttons,
+    which also carry a `mode` param but call set_mode."""
+    return [b for b in _all_buttons(tree)
+            if b.get("on_click", {}).get("function") == "set_coding_mode"]
+
+
+@pytest.mark.asyncio
+async def test_panel_running_tab_has_own_coding_mode_segment(make_ctx, gw_mock):
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW, PARKED_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    per_tab = [b for b in _coding_mode_buttons_of(tree)
+               if b["on_click"]["params"].get("session_id") == LIVE_ROW["session_id"]]
+    assert {b["label"] for b in per_tab} == {"Default", "Plan", "Autopilot"}
+    assert {b["on_click"]["params"]["mode"] for b in per_tab} == {"default", "plan", "autopilot"}
+
+
+@pytest.mark.asyncio
+async def test_panel_parked_tab_has_own_coding_mode_segment(make_ctx, gw_mock):
+    """A parked tab (terminal offline) still gets the segment — a mode flip
+    reaches a parked session, same as steer/stop."""
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW, PARKED_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    parked = [b for b in _coding_mode_buttons_of(tree)
+              if b["on_click"]["params"].get("session_id") == PARKED_ROW["session_id"]]
+    # Assert by the mode param, not the label — PARKED_ROW's requested_mode
+    # 'plan' decorates that one button's label with «(applying…)».
+    assert {b["on_click"]["params"]["mode"] for b in parked} == {"default", "plan", "autopilot"}
+
+
+@pytest.mark.asyncio
+async def test_panel_idle_tab_has_no_coding_mode_segment(make_ctx, gw_mock):
+    """An idle tab has no commandable session — no per-tab mode segment,
+    same gate as the per-tab Stop button."""
+    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [IDLE_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    idle_mode_btns = [b for b in _coding_mode_buttons_of(tree)
+                      if b["on_click"]["params"].get("session_id") == IDLE_ROW["session_id"]]
+    assert idle_mode_btns == []
+
+
+@pytest.mark.asyncio
+async def test_panel_per_tab_mode_highlights_requested_with_applying(make_ctx, gw_mock):
+    """PARKED_ROW has applied_mode None + requested_mode 'plan' — its own
+    segment highlights Plan primary with the «(applying…)» suffix, exactly
+    like the global card's requested-mode rendering; exactly one primary."""
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [PARKED_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    parked = [b for b in _coding_mode_buttons_of(tree)
+              if b["on_click"]["params"].get("session_id") == PARKED_ROW["session_id"]]
+    plan = [b for b in parked if b["on_click"]["params"]["mode"] == "plan"][0]
+    assert plan["variant"] == "primary"
+    assert "applying" in plan["label"]
+    assert sum(1 for b in parked if b["variant"] == "primary") == 1
+
+
+@pytest.mark.asyncio
+async def test_panel_global_coding_mode_suppressed_when_tabs_present(make_ctx, gw_mock):
+    """With the per-tab inventory available, the global Coding-mode section
+    is suppressed — every set_coding_mode button is a per-tab target
+    (carries a session_id), none is the session_id-less global one."""
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    assert '"title": "Coding mode"' not in _flat(node)
+    global_btns = [b for b in _coding_mode_buttons_of(tree)
+                   if not b["on_click"]["params"].get("session_id")]
+    assert global_btns == []
+
+
+@pytest.mark.asyncio
+async def test_panel_global_coding_mode_is_fallback_when_no_tabs(make_ctx, gw_mock):
+    """Fail-soft fallback: no /sessions route (tabs empty) while the freshest
+    read says running — the global Coding-mode section renders so a mode
+    control is always reachable, with session_id-less (freshest-target)
+    buttons."""
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    # SESSIONS_PATH deliberately NOT registered -> tabs == []
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    assert '"title": "Coding mode"' in _flat(node)
+    global_btns = [b for b in _coding_mode_buttons_of(tree)
+                   if not b["on_click"]["params"].get("session_id")]
+    assert {b["label"] for b in global_btns} == {"Default", "Plan", "Autopilot"}

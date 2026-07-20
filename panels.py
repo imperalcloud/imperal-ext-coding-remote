@@ -33,6 +33,18 @@ instead of silently omitting the section. The Session card's Stop button
 also gained a caption line explaining what it actually does — Valentin's
 other complaint, that "Stop" alone reads as ambiguous (stop the whole
 session? just the run?).
+
+v1.5.0 (W4c, same day — live feedback: "I want to change coding mode per
+tab, each tab its own full control, so the user sees EVERYTHING properly"):
+every running/parked tab row now carries its OWN Default/Plan/Autopilot
+coding-mode segment, targeted at that tab's session_id via the exact same
+set_coding_mode path the chat tool and the global card use (the gateway
+/mode route already accepts session_id targeting from T2). One
+`_coding_mode_buttons` builder serves both the global card and every
+per-tab row — no second code path. The GLOBAL Coding-mode section is now a
+FALLBACK: it renders only when the per-tab inventory is unavailable (fetch
+failed soft, or no open tabs), so a mode control is always reachable
+without duplicating the per-tab segments when the inventory IS present.
 """
 from __future__ import annotations
 
@@ -66,24 +78,38 @@ def _route_buttons(current_mode: str) -> ui.Stack:
     ])
 
 
-def _coding_mode_buttons(running: bool, applied_mode: str | None,
-                         requested_mode: str | None = None) -> ui.Stack:
+def _coding_mode_buttons(enabled: bool, applied_mode: str | None,
+                         requested_mode: str | None = None,
+                         session_id: str | None = None,
+                         compact: bool = False) -> ui.Stack:
     # Segmented control: each button requests that mode for the session via
-    # set_coding_mode (same single code path as the chat tool). Disabled
-    # while no session is running at all — a mode flip is a command to a
-    # session, not a stored setting, but it DOES reach a parked session
-    # (running=True, active=False), same as steer/send. The button matching
-    # applied_mode is highlighted primary; when applied_mode is None (the
-    # terminal hasn't ACK'd one yet) every button stays secondary — never
-    # guess which one is "current". Autopilot additionally gets a local y/n
-    # confirm at the terminal before it takes effect.
+    # set_coding_mode (same single code path as the chat tool). ``enabled``
+    # gates clickability — a mode flip is a command to a session, not a stored
+    # setting, but it DOES reach a parked session (running, terminal offline),
+    # same as steer/send; the caller passes whether THIS target has a
+    # commandable session. The button matching applied_mode is highlighted
+    # primary; when applied_mode is None (the terminal hasn't ACK'd one yet)
+    # every button stays secondary — never guess which one is "current".
+    # Autopilot additionally gets a local y/n confirm at the terminal before
+    # it takes effect.
+    #
+    # ``session_id`` (v1.5.0, W4c 2026-07-20 — Valentin: "each tab its OWN
+    # full control, change coding mode per tab") targets ONE tab's
+    # set_coding_mode instead of the gateway's freshest-session pick; ``None``
+    # = the freshest session (the global card's fail-soft fallback path when
+    # the per-tab inventory is unavailable). ``compact`` renders sm buttons
+    # for the tighter per-tab row. ONE builder for both the global card and
+    # every per-tab row — no second code path.
+    call_kwargs = {"session_id": session_id} if session_id else {}
+    btn_kwargs = {"size": "sm"} if compact else {}
     return ui.Stack(direction="h", gap=1, children=[
         ui.Button(
             label=(f"{label} (applying…)" if requested_mode and code == requested_mode
                    and requested_mode != applied_mode else label),
             variant="primary" if code == (requested_mode or applied_mode) else "secondary",
-            disabled=not running,
-            on_click=ui.Call("set_coding_mode", mode=code),
+            disabled=not enabled,
+            on_click=ui.Call("set_coding_mode", mode=code, **call_kwargs),
+            **btn_kwargs,
         )
         for code, label in _CODING_MODE_LABELS.items()
     ])
@@ -201,23 +227,28 @@ def _tab_status_text(tab) -> str:
 
 
 def _tab_row(tab) -> ui.Stack:
-    """One row of the Tabs section: a glyph+label+status+mode line plus
-    per-tab action buttons. ``●`` = terminal_online (T1 gateway report: this
-    can be true for more than one tab at once in a genuine multi-tab
-    session — never assumed "at most one online" here), ``○`` = not.
-    Approve/Decline render only when THIS tab has its own pending_consent —
-    a multi-tab user can have more than one approval waiting at once, each
-    answered independently. Stop (v1.4.1, W4c follow-up) renders only while
-    THIS tab's own status is running or parked — an idle tab (terminal
-    open, nothing running) has no run to stop, so no Stop button is shown
-    for it; when it does render it is the same remote-Esc semantics as the
-    Session card's Stop button, scoped to this one tab via session_id."""
+    """One row of the Tabs section: a glyph+label+status+mode line, per-tab
+    action buttons, and (v1.5.0) this tab's OWN coding-mode segment. ``●`` =
+    terminal_online (T1 gateway report: this can be true for more than one
+    tab at once in a genuine multi-tab session — never assumed "at most one
+    online" here), ``○`` = not. Approve/Decline render only when THIS tab has
+    its own pending_consent — a multi-tab user can have more than one approval
+    waiting at once, each answered independently. Stop (v1.4.1, W4c follow-up)
+    and the coding-mode segment (v1.5.0, W4c 2026-07-20 — Valentin: "change
+    coding mode per tab, each tab its own full control") render only while
+    THIS tab's own status is running or parked — an idle tab (terminal open,
+    nothing running) has no run to stop and no session to flip a mode on, so
+    neither is shown for it; when they do render they are scoped to this one
+    tab via session_id, the same remote-Esc / set_coding_mode semantics as the
+    Session card and the global Coding-mode section, never the gateway's
+    freshest-session guess."""
     glyph = "●" if tab.terminal_online else "○"
     mode_txt = tab.mode or "mode?"
     status_txt = _tab_status_text(tab)
     line = f"{glyph} {_tab_label(tab)} · {status_txt} · {mode_txt}"
     if tab.pending_consent:
         line += " · ⚠ approval pending"
+    commandable = tab.status in ("running", "parked")
     actions = []
     if tab.pending_consent:
         actions.append(ui.Button(
@@ -226,14 +257,18 @@ def _tab_row(tab) -> ui.Stack:
         actions.append(ui.Button(
             label="Decline", variant="secondary", size="sm",
             on_click=ui.Call("reply_consent", text="decline", session_id=tab.session_id)))
-    if tab.status in ("running", "parked"):
+    if commandable:
         actions.append(ui.Button(
             label="Stop", variant="danger", size="sm", icon="Square",
             on_click=ui.Call("stop_session", session_id=tab.session_id)))
-    return ui.Stack(direction="v", gap=1, children=[
-        ui.Text(content=line),
-        ui.Stack(direction="h", gap=1, children=actions),
-    ])
+    children = [ui.Text(content=line)]
+    if actions:
+        children.append(ui.Stack(direction="h", gap=1, children=actions))
+    if commandable:
+        children.append(_coding_mode_buttons(
+            True, tab.mode, tab.requested_mode,
+            session_id=tab.session_id, compact=True))
+    return ui.Stack(direction="v", gap=1, children=children)
 
 
 def _tabs_section(tabs: list) -> ui.Section | None:
@@ -276,20 +311,23 @@ async def coding_remote_control_panel(ctx, **kwargs):
     top-level read OR some tab is running/parked; an Approval-pending
     section with Approve/Decline when the session is waiting on a consent
     reply (calls reply_consent directly); a row of route buttons (Telegram/
-    Panel/Both/Off — each calls set_mode directly); a row of coding-mode
-    buttons (Default/Plan/Autopilot — each calls set_coding_mode directly,
-    highlighting the REAL applied mode once the terminal ACKs one); a Tabs
-    section (v1.4.0, T2; v1.4.1 W4c follow-up: now renders for ANY non-empty
-    tab list, even a lone tab with nothing pending — visibility of what is
-    actually open was the point of the fix) listing every open tab with its
-    own status (running/parked/idle) and per-tab Approve/Decline/Stop (Stop
-    only while that tab is running or parked); an honest empty-state line
-    when there are truly no open tabs at all; and a text box (plus a
-    tab-target Select once there is more than one tab) to send an
-    instruction into the session (calls send_instruction directly). Steer/
-    mode/send controls stay enabled whenever the session is running, live
-    or parked — only Idle disables them. No local computation of session
-    state — always the gateway's live answer via get_status.
+    Panel/Both/Off — each calls set_mode directly); a Tabs section (v1.4.0,
+    T2; v1.4.1 W4c follow-up: now renders for ANY non-empty tab list, even a
+    lone tab with nothing pending — visibility of what is actually open was
+    the point of the fix) listing every open tab with its own status
+    (running/parked/idle), per-tab Approve/Decline/Stop (only while that tab
+    is running or parked), and — v1.5.0, W4c 2026-07-20 (Valentin: "change
+    coding mode per tab, each tab its own full control") — that tab's OWN
+    Default/Plan/Autopilot coding-mode segment, targeted by session_id, so
+    every tab is flipped independently; a GLOBAL Coding-mode row now renders
+    only as a FALLBACK when the per-tab inventory is unavailable (so a mode
+    control is always reachable), never duplicating the per-tab segments;
+    an honest empty-state line when there are truly no open tabs at all;
+    and a text box (plus a tab-target Select once there is more than one
+    tab) to send an instruction into the session (calls send_instruction
+    directly). Steer/mode/send controls stay enabled whenever the session is
+    running, live or parked — only Idle disables them. No local computation
+    of session state — always the gateway's live answer via get_status.
     """
     uid = _user_id(ctx)
     try:
@@ -329,6 +367,13 @@ async def coding_remote_control_panel(ctx, **kwargs):
     if running and not active and data.last_seen and _ago(data.last_seen):
         kv_items.insert(0, {"key": "Terminal", "value": f"last seen {_ago(data.last_seen)}"})
 
+    # Global Coding-mode section (v1.5.0): now a FALLBACK, not the primary
+    # control. When the per-tab inventory is available every tab carries its
+    # own Default/Plan/Autopilot segment (see _tab_row), so the global card
+    # would only duplicate them — it renders ONLY when `tabs` is empty (the
+    # inventory fetch failed soft, or the user genuinely has no open tab), so
+    # a mode control is always reachable even when the /sessions inventory is
+    # down while the freshest read still says a session is running.
     requested_mode = getattr(data, "requested_mode", None)
     coding_mode_children = [_coding_mode_buttons(running, applied_mode, requested_mode)]
     if running and applied_mode is None and requested_mode is None:
@@ -391,17 +436,16 @@ async def coding_remote_control_panel(ctx, **kwargs):
             placeholder="Target tab (optional — defaults to the most recently active)",
         ))
 
-    children.extend([
-        ui.Section(title="Route", children=[_route_buttons(route_mode)]),
-        ui.Section(title="Coding mode", children=coding_mode_children),
-        ui.Section(title="Send instruction", children=[
-            ui.Form(
-                action="send_instruction",
-                submit_label="Send",
-                children=send_children,
-            ),
-        ]),
-    ])
+    children.append(ui.Section(title="Route", children=[_route_buttons(route_mode)]))
+    if not tabs:
+        children.append(ui.Section(title="Coding mode", children=coding_mode_children))
+    children.append(ui.Section(title="Send instruction", children=[
+        ui.Form(
+            action="send_instruction",
+            submit_label="Send",
+            children=send_children,
+        ),
+    ]))
 
     # Empty state (v1.4.1, W4c follow-up): tabs is now the more accurate
     # "is anything open at all" signal — it includes idle tabs (terminal
