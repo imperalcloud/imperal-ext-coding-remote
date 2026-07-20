@@ -55,6 +55,13 @@ class CodingTab(BaseModel):
     pending_consent: dict | None = None
     started: str | None = None
     status: str = ""
+    # Per-tab ROUTE (route-per-tab, 2026-07-21): this tab's own remote-control
+    # routing — enabled + mirror/steer surfaces — so the panel renders a
+    # per-tab route control (each tab can mirror/steer independently of the
+    # account default). None when the gateway hasn't sent it (older gateway).
+    enabled: bool | None = None
+    mirror: list[str] | None = None
+    steer: list[str] | None = None
 
 
 class CodingRemote(sdl.Entity):

@@ -96,6 +96,44 @@ async def test_set_mode_tg_puts_the_route_body_and_echoes_state(make_ctx, gw_moc
 
 
 @pytest.mark.asyncio
+async def test_set_mode_targets_session_when_provided(make_ctx, gw_mock):
+    """route-per-tab (v1.7.0): a non-empty session_id rides in the PUT body so
+    the gateway routes THAT tab only (never the account default)."""
+    gw_mock.put(STATUS_PATH, json={"user_id": UID, "active": True,
+                                   "state": {"enabled": True, "mirror": ["panel"], "steer": ["panel"]}})
+    res = await h.fn_set(make_ctx(), h.SetParams(mode="panel", session_id="coding-X-1"))
+    assert res.status == "success"
+    body = json.loads(gw_mock.last_request("PUT", STATUS_PATH).content)
+    assert body["session_id"] == "coding-X-1"
+    assert body["enabled"] is True and body["mirror"] == ["panel"]
+
+
+@pytest.mark.asyncio
+async def test_set_mode_blank_session_omits_it_and_never_mutates_preset(make_ctx, gw_mock):
+    """Omitted session_id → account-level write with NO session_id key; and a
+    targeted call must never mutate the shared _MODES preset (fn_set copies
+    it) — else one tab's session_id would leak into every later account route."""
+    before = dict(h._MODES["tg"])
+    gw_mock.put(STATUS_PATH, json={"user_id": UID, "state": {"enabled": True, "mirror": ["telegram"], "steer": ["telegram"]}})
+    await h.fn_set(make_ctx(), h.SetParams(mode="tg", session_id="coding-X-1"))  # targeted
+    await h.fn_set(make_ctx(), h.SetParams(mode="tg"))                            # then account-level
+    body = json.loads(gw_mock.last_request("PUT", STATUS_PATH).content)
+    assert "session_id" not in body           # account-level body carries none
+    assert h._MODES["tg"] == before           # shared preset intact
+    assert "session_id" not in h._MODES["tg"]
+
+
+def test_row_to_tab_maps_per_tab_route_fields():
+    """route-per-tab: the /sessions row's enabled/mirror/steer survive into
+    CodingTab so the panel can render a per-tab route control."""
+    tab = h._row_to_tab({"session_id": "coding-X-1", "enabled": True,
+                         "mirror": ["telegram"], "steer": ["panel"]})
+    assert tab.enabled is True
+    assert tab.mirror == ["telegram"]
+    assert tab.steer == ["panel"]
+
+
+@pytest.mark.asyncio
 async def test_set_mode_off_disables_routing(make_ctx, gw_mock):
     echoed = {"user_id": UID, "session_id": None, "active": False,
               "state": {"enabled": False, "mirror": [], "steer": []}}

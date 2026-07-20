@@ -297,7 +297,7 @@ async def test_reply_consent_404_new_copy_same_code(make_ctx, gw_mock):
 # ─── params models expose session_id with the documented description ─── #
 
 def test_write_params_all_expose_session_id_field():
-    for model in (h.SendParams, h.StopParams, h.CodingModeParams, h.ConsentParams):
+    for model in (h.SendParams, h.StopParams, h.CodingModeParams, h.ConsentParams, h.SetParams):
         assert "session_id" in model.model_fields, model
         field = model.model_fields["session_id"]
         assert field.default == ""
@@ -844,3 +844,42 @@ async def test_panel_parked_only_header_not_green(make_ctx, gw_mock):
 
     header_stat = [s for s in find_stats(tree) if s.get("label") == "Coding sessions"][0]
     assert header_stat["color"] != "green"
+
+
+# ─── v1.7.0 route-per-tab ──────────────────────────────────────────────── #
+
+@pytest.mark.asyncio
+async def test_panel_tab_card_has_per_tab_route_segment(make_ctx, gw_mock):
+    """Each tab card renders its OWN Telegram/Panel/Both/Off route segment,
+    targeted at that tab's session_id (set_mode), with the tab's current
+    route highlighted from its own enabled/mirror/steer."""
+    row = dict(LIVE_ROW, enabled=True, mirror=["telegram"], steer=["telegram"])
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [row]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    route_btns = [b for b in _all_buttons(tree)
+                  if b.get("on_click", {}).get("function") == "set_mode"
+                  and b["on_click"]["params"].get("session_id") == LIVE_ROW["session_id"]]
+    assert {b["label"] for b in route_btns} == {"Telegram", "Panel", "Both", "Off"}
+    # mirror=steer=telegram → this tab's route is "tg" → Telegram highlighted
+    tg = [b for b in route_btns if b["label"] == "Telegram"][0]
+    assert tg["variant"] == "primary"
+
+
+@pytest.mark.asyncio
+async def test_panel_account_route_has_no_session_id(make_ctx, gw_mock):
+    """The header (account-level) route buttons must NOT carry a session_id —
+    they write the per-user default; only per-tab route buttons target a tab."""
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": []})  # no tabs → only header route
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    set_mode_btns = [b for b in _all_buttons(tree)
+                     if b.get("on_click", {}).get("function") == "set_mode"]
+    assert set_mode_btns  # header route present
+    assert all(not b["on_click"]["params"].get("session_id") for b in set_mode_btns)

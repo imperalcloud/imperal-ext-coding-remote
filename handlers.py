@@ -36,6 +36,7 @@ class EmptyParams(BaseModel):
 class SetParams(BaseModel):
     """Route the terminal coding session. mode: tg | panel | both | off."""
     mode: str = Field(description="tg | panel | both | off")
+    session_id: str = Field(default="", description=_SESSION_ID_DESC)
 
 
 class SendParams(BaseModel):
@@ -114,6 +115,9 @@ def _row_to_tab(row: dict) -> CodingTab:
         mode=row.get("applied_mode"), requested_mode=row.get("requested_mode"),
         pending_consent=row.get("pending_consent"), started=row.get("started"),
         status=row.get("status", ""),
+        # Per-tab route (route-per-tab, 2026-07-21): this tab's own
+        # mirror/steer, so the panel can render a per-tab route control.
+        enabled=row.get("enabled"), mirror=row.get("mirror"), steer=row.get("steer"),
     )
 
 
@@ -190,9 +194,16 @@ async def fn_set(ctx, params: SetParams) -> ActionResult:
     """
     try:
         uid = _user_id(ctx)
-        body = _MODES.get(params.mode.strip().lower())
-        if body is None:
+        preset = _MODES.get(params.mode.strip().lower())
+        if preset is None:
             return ActionResult.error("mode must be one of: tg, panel, both, off", code="CODING_REMOTE_BAD_MODE")
+        # Copy — never mutate the shared _MODES preset. Targeted (route-per-tab,
+        # 2026-07-21): a non-empty session_id routes THAT tab only (gateway
+        # writes just its state, leaving the account default untouched);
+        # omitted = the account-level default write, byte-identical to before.
+        body = dict(preset)
+        if params.session_id:
+            body["session_id"] = params.session_id
         res, err = await gw_put(f"/v1/internal/coding-remote/{uid}", body)
         if err:
             return ActionResult.error(f"Not saved: {err}", code="CODING_REMOTE_ROUTE_WRITE_FAILED")

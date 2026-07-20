@@ -1,21 +1,18 @@
 """Coding Remote · Panel — remote control for the terminal Webbee Code
-session(s). v1.6.0 (2026-07-20 redesign): tab-first and LIVE.
+session(s). Tab-first and LIVE (v1.6.0 redesign; v1.7.0 per-tab route).
 
-- **Live, no reload.** `refresh="interval:5s"` (the Auth-GW caches panel
-  responses 5s, so 5s is the fastest meaningful rate; ≈ the terminal's own
-  ~4s poll). The old `on_event:` refresh only fired after the user's OWN
-  panel writes, so terminal-side changes never reached the panel.
-- **Honest account header** — a summary line ("2 tabs · 1 running · 1 idle")
-  + the account-level route, replacing the old "Session: Live" card that
-  passed ONE freshest-pointer session off as "the" session.
-- **One card per tab, full control ALWAYS visible** — every tab
-  (running/parked/idle) carries its own Default/Plan/Autopilot mode segment
-  (session_id-targeted; a flip reaches an IDLE tab too), Stop while
-  running/parked, Approve/Decline when it has a pending approval.
-
-Every action calls the same get_status/set_mode/set_coding_mode/
-send_instruction/stop_session/reply_consent handlers the chat tools use — one
-code path per write. No local state computation; always get_status's live answer.
+`refresh="interval:5s"` (Auth-GW caches panel responses 5s) → terminal-side
+changes (a tab starts, a consent appears, mode changed in the terminal) show
+without a manual reload. Header: an honest account summary + the account-level
+route, replacing the old fake single-"Session: Live" card. Then one card per
+open tab (running/parked/idle) with FULL control ALWAYS visible: its own
+Default/Plan/Autopilot mode + its own Telegram/Panel/Both/Off route (both
+session_id-targeted and reaching idle tabs), Stop while running/parked,
+Approve/Decline on a pending approval. Every action calls the same
+get_status/set_mode/set_coding_mode/send_instruction/stop_session/
+reply_consent handlers the chat tools use — one code path per write; no local
+state computation. Design: superpowers/specs 2026-07-20 redesign + 2026-07-21
+route-per-tab.
 """
 from __future__ import annotations
 
@@ -37,13 +34,16 @@ _STATUS_GLYPH_WORD = {"running": "running", "parked": "parked", "idle": "idle"}
 _STATUS_COLOR = {"running": "green", "parked": "yellow", "idle": "gray"}
 
 
-def _route_buttons(current_mode: str) -> ui.Stack:
+def _route_buttons(current_mode: str, session_id: str | None = None) -> ui.Stack:
+    # ``session_id`` (v1.7.0) targets ONE tab's routing (gateway writes only
+    # that tab's state); None = the account-level header control.
+    call_kwargs = {"session_id": session_id} if session_id else {}
     return ui.Stack(direction="h", gap=1, children=[
         ui.Button(
             label=label,
             variant="primary" if mode == current_mode else "secondary",
             size="sm",
-            on_click=ui.Call("set_mode", mode=mode),
+            on_click=ui.Call("set_mode", mode=mode, **call_kwargs),
         )
         for mode, label in _MODE_LABELS.items()
     ])
@@ -140,6 +140,12 @@ def _tab_card(tab, enabled: bool, allow_autopilot: bool) -> ui.Card:
                 "turn on remote control above to change this tab's mode")
         children.append(ui.Text(content=hint, variant="caption"))
 
+    # Per-tab route (v1.7.0): this tab's OWN mirror/steer (Off disables just
+    # this tab); the header route stays the account default.
+    children.append(ui.Text(content="Mirror & steer (this tab)", variant="caption"))
+    children.append(_route_buttons(_current_mode(tab.mirror, tab.steer, bool(tab.enabled)),
+                                   session_id=tab.session_id))
+
     actions = []
     if tab.pending_consent and enabled:
         actions.append(ui.Button(
@@ -181,18 +187,11 @@ def _consent_label(pending: dict) -> str:
     refresh="interval:5s",
 )
 async def coding_remote_control_panel(ctx, **kwargs):
-    """Tab-first, live control surface for the terminal Webbee Code session(s).
-
-    Header: an honest account summary ("N tabs · M running · …") + the
-    account-level route (Telegram/Panel/Both/Off). Then one card per open tab
-    — each with its own status, its own Default/Plan/Autopilot mode segment
-    (targeted at that tab, working even when idle), a Stop while it's
-    running/parked, and Approve/Decline when it has a pending approval. Then a
-    Send box (with a target-tab picker when there is more than one tab). When
-    no tab is open at all, an honest empty-state line. Everything remote
-    requires remote control to be on — when it's Off the header says so and
-    the Route buttons turn it on; no dead/mysterious buttons.
-    """
+    """Tab-first, live control surface for the terminal Webbee Code
+    session(s). Header (honest account summary + account route) → one card per
+    open tab (its own mode segment + per-tab route + Stop + Approve/Decline) →
+    Send box (target-tab picker when >1) → honest empty-state. Everything
+    remote needs remote control on. Full contract: module docstring above."""
     uid = _user_id(ctx)
     try:
         res = await fn_status(ctx, EmptyParams())
