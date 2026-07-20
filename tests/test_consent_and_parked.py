@@ -249,7 +249,9 @@ async def test_panel_highlights_matching_applied_mode_as_primary(make_ctx, gw_mo
 
 
 @pytest.mark.asyncio
-async def test_panel_mode_unknown_keeps_all_secondary_and_shows_hint(make_ctx, gw_mock):
+async def test_panel_mode_unknown_keeps_all_secondary(make_ctx, gw_mock):
+    """applied_mode None (terminal hasn't ACKed one) -> every mode button
+    stays secondary; we never guess which is current."""
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": True, "running": True,
         "applied_mode": None, "pending_consent": None,
@@ -274,7 +276,6 @@ async def test_panel_mode_unknown_keeps_all_secondary_and_shows_hint(make_ctx, g
     coding_buttons = {b["label"]: b["variant"] for b in find_buttons(tree)
                        if b["label"] in ("Default", "Plan", "Autopilot")}
     assert coding_buttons == {"Default": "secondary", "Plan": "secondary", "Autopilot": "secondary"}
-    assert "mode unknown" in _flat(node)
 
 
 @pytest.mark.asyncio
@@ -303,12 +304,14 @@ async def test_panel_shows_approval_section_with_buttons_when_pending(make_ctx, 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert "Approval pending" in flat
+    # v1.6.0: no /sessions mock -> fallback "Active session" card renders the
+    # consent label (FACTS from the kernel) + Approve/Decline for the freshest
+    # session. The old "Approval pending" section title is gone.
     assert "run_shell" in flat and "rm -rf build/" in flat
+    assert "waiting for approval" in flat
     assert "reply_consent" in flat
     assert '"text": "approve"' in flat
     assert '"text": "decline"' in flat
-    assert "decline this approval" in flat
 
 
 @pytest.mark.asyncio
@@ -324,10 +327,13 @@ async def test_panel_no_approval_section_when_nothing_pending(make_ctx, gw_mock)
     assert "Approval pending" not in flat
 
 
-# ─── panels.py: Session card — Live / Parked / Idle + controls enabled ─ #
+# ─── panels.py (v1.6.0): honest header summary + fallback / empty state ─ #
 
 @pytest.mark.asyncio
-async def test_panel_live_session_stat_and_controls_enabled(make_ctx, gw_mock):
+async def test_panel_running_session_summary_and_controls_enabled(make_ctx, gw_mock):
+    """A running session (no /sessions mock -> fallback path): the header
+    summary is honest ("1 active session", NOT the old fake "Live" stat) and
+    the fallback controls are enabled."""
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": True, "running": True,
         "applied_mode": "default", "pending_consent": None,
@@ -336,12 +342,17 @@ async def test_panel_live_session_stat_and_controls_enabled(make_ctx, gw_mock):
 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
-    assert '"value": "Live"' in flat
-    assert "Parked" not in flat
+    assert "1 active session" in flat
+    assert '"value": "Live"' not in flat  # the fake single-session stat is gone
 
 
 @pytest.mark.asyncio
-async def test_panel_parked_session_shows_offline_wording_and_last_seen(make_ctx, gw_mock):
+async def test_panel_parked_session_is_reachable_controls_enabled(make_ctx, gw_mock):
+    """Parked (active=False, running=True): the gateway reaches parked
+    sessions, so the fallback Stop + mode buttons stay enabled. The old
+    Session-card 'Parked/terminal offline/last seen' KV wording is gone
+    (parked-ness now shows as a per-tab status pill when the inventory is
+    available; this fallback path has no tab list)."""
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": f"coding-{UID}-abc", "active": False, "running": True,
         "applied_mode": None, "last_seen": 1784542000, "pending_consent": None,
@@ -349,14 +360,26 @@ async def test_panel_parked_session_shows_offline_wording_and_last_seen(make_ctx
     })
 
     node = await p.coding_remote_control_panel(make_ctx())
-    flat = _flat(node)
-    assert "Parked" in flat and "terminal offline" in flat
-    assert "last seen" in flat
-    assert "ago" in flat or "just now" in flat  # humanized epoch (v1.3.1)
+    tree = node.to_dict()
+
+    def find_by_label(n, label):
+        out = []
+        if isinstance(n, dict):
+            if n.get("type") == "Button" and n.get("props", {}).get("label") == label:
+                out.append(n["props"])
+            for v in n.values():
+                out.extend(find_by_label(v, label))
+        elif isinstance(n, list):
+            for v in n:
+                out.extend(find_by_label(v, label))
+        return out
+
+    assert find_by_label(tree, "Stop")[0]["disabled"] is False
+    assert find_by_label(tree, "Plan")[0]["disabled"] is False
 
 
 @pytest.mark.asyncio
-async def test_panel_idle_session_stat_says_idle(make_ctx, gw_mock):
+async def test_panel_idle_shows_honest_empty_state(make_ctx, gw_mock):
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": None, "active": False, "running": False,
         "applied_mode": None, "pending_consent": None,
@@ -365,12 +388,8 @@ async def test_panel_idle_session_stat_says_idle(make_ctx, gw_mock):
 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
-    assert '"value": "Idle"' in flat
-    # v1.4.1 (W4c follow-up): the "no session live" copy was replaced by an
-    # honest "no open tabs" empty state, keyed off the tabs signal (this
-    # test's /sessions route is unmocked -> fails soft -> tabs == []) rather
-    # than the old running-only check.
-    assert "no open tabs" in flat
+    assert "No coding sessions open" in flat
+    assert "open Webbee Code in a terminal" in flat
 
 
 @pytest.mark.asyncio
@@ -409,7 +428,11 @@ async def test_panel_parked_session_keeps_stop_and_mode_buttons_enabled(make_ctx
 
 
 @pytest.mark.asyncio
-async def test_panel_idle_disables_stop_and_mode_buttons(make_ctx, gw_mock):
+async def test_panel_idle_has_no_control_buttons(make_ctx, gw_mock):
+    """Idle + remote control off + no tabs: nothing is controllable, so there
+    are simply NO Stop / mode buttons (v1.6.0 — honest emptiness beats a row
+    of dead disabled buttons). Only the account Route buttons remain in the
+    header."""
     gw_mock.get(STATUS_PATH, json={
         "user_id": UID, "session_id": None, "active": False, "running": False,
         "applied_mode": None, "pending_consent": None,
@@ -431,18 +454,17 @@ async def test_panel_idle_disables_stop_and_mode_buttons(make_ctx, gw_mock):
                 out.extend(find_by_label(v, label))
         return out
 
-    assert find_by_label(tree, "Stop")[0]["disabled"] is True
-    assert find_by_label(tree, "Plan")[0]["disabled"] is True
+    assert find_by_label(tree, "Stop") == []
+    assert find_by_label(tree, "Plan") == []
 
 
-# ─── panel refresh= includes the new consent-reply event ─────────────── #
+# ─── panel refresh= is live interval polling (v1.6.0) ────────────────── #
 
-def test_control_panel_refresh_includes_consent_replied_event():
+def test_control_panel_refresh_is_live_interval():
     from app import ext
     panel_def = ext._panels.get("control") if hasattr(ext, "_panels") else None
     assert panel_def is not None
-    refresh = panel_def.get("refresh", "")
-    assert "coding-remote.consent_replied" in refresh
+    assert panel_def.get("refresh", "") == "interval:5s"
 
 
 def test_status_accepts_int_epoch_last_seen():
@@ -452,15 +474,6 @@ def test_status_accepts_int_epoch_last_seen():
     from models import CodingRemote
     m = CodingRemote(active=True, running=True, last_seen=1784545769)
     assert m.last_seen == 1784545769
-
-
-def test_panel_last_seen_humanized(monkeypatch):
-    import time as _time
-    import panels
-    monkeypatch.setattr(_time, "time", lambda: 1784545769 + 180)
-    assert panels._ago(1784545769) == "3m ago"
-    assert panels._ago("garbage") == ""
-    assert panels._ago(1784545769 + 500) == "just now"  # future/skew clamps to 0
 
 
 def test_panel_requested_mode_renders_applying_suffix():

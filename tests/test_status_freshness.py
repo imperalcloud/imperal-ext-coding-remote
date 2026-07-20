@@ -87,32 +87,17 @@ def test_set_coding_mode_declares_event_for_panel_autorefresh():
     assert getattr(entry, "event", "") == "coding-remote.coding_mode_changed"
 
 
-# ─── panel refresh= is wired to those same events, not "manual" ────────── #
+# ─── panel refresh= is LIVE interval polling (v1.6.0 redesign) ─────────── #
+# The panel moved off on_event: to interval polling so terminal-side changes
+# (a tab starts running, a consent appears, the mode changed in the terminal)
+# show up WITHOUT a manual reload — on_event only fired after the user's own
+# panel writes. The write tools still DECLARE event= (asserted above) for
+# other consumers / the synthetic panel_refresh, but the panel no longer keys
+# its refresh off them.
 
-def test_control_panel_refresh_is_wired_to_write_events():
+def test_control_panel_refresh_is_live_interval():
     from app import ext
     panel_def = ext._panels.get("control") if hasattr(ext, "_panels") else None
     assert panel_def is not None, "control panel must be registered"
     refresh = panel_def.get("refresh", "")
-    assert refresh != "manual", "panel must no longer be manual-only refresh"
-    assert refresh.startswith("on_event:")
-    for evt in ("coding-remote.route_changed", "coding-remote.instruction_sent",
-                "coding-remote.stopped", "coding-remote.coding_mode_changed"):
-        assert evt in refresh
-
-
-# ─── _fmt_checked_at renders an honest as-of label ─────────────────────── #
-
-def test_fmt_checked_at_none_renders_unknown_not_now():
-    assert p._fmt_checked_at(None) == "unknown"
-
-
-def test_fmt_checked_at_garbage_renders_unknown():
-    assert p._fmt_checked_at("not-a-date") == "unknown"
-
-
-def test_fmt_checked_at_valid_iso_renders_readable_utc():
-    out = p._fmt_checked_at("2026-07-17T02:45:47Z")
-    assert "2026-07-17" in out
-    assert "02:45" in out
-    assert "UTC" in out
+    assert refresh == "interval:5s", f"panel must poll live, got {refresh!r}"

@@ -307,17 +307,13 @@ def test_write_params_all_expose_session_id_field():
 
 # ─── panel refresh= covers every write event this ext emits ───────────── #
 
-def test_control_panel_refresh_contains_every_declared_write_event():
-    """Walk the actual registered @chat.function events (not a hardcoded
-    subset) and assert every one of them is in the panel's refresh= list —
-    the consent-staleness fix's real acceptance bar."""
-    from app import chat as chat_ext, ext
-    events = {entry.event for entry in chat_ext._functions.values() if getattr(entry, "event", "")}
-    assert events, "expected at least one write tool to declare event="
+def test_control_panel_refresh_is_live_interval():
+    """v1.6.0: the panel polls live (interval), not on_event — so terminal-
+    side changes show up without a manual reload. The write tools still
+    declare event= (other consumers), but the panel no longer keys off them."""
+    from app import ext
     panel_def = ext._panels.get("control")
-    refresh = panel_def.get("refresh", "")
-    for evt in events:
-        assert evt in refresh, evt
+    assert panel_def.get("refresh", "") == "interval:5s"
 
 
 # ─── panels.py: _tab_label fallback ────────────────────────────────────── #
@@ -348,7 +344,7 @@ async def test_panel_renders_tabs_section_for_multiple_sessions(make_ctx, gw_moc
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert "Tabs" in flat
+    # v1.6.0: each tab is its own Card (title = "● {label}"); no "Tabs" section.
     assert "fix the auth bug" in flat
     assert "marathon 2" in flat  # PARKED_ROW's label fallback
 
@@ -366,7 +362,7 @@ async def test_panel_renders_tabs_section_for_single_tab_no_pending(make_ctx, gw
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert '"title": "Tabs"' in flat
+    # v1.6.0: a lone tab renders as its own Card (title carries the label).
     assert "fix the auth bug" in flat
 
 
@@ -382,8 +378,9 @@ async def test_panel_tabs_section_renders_for_single_tab_with_pending_consent(ma
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert '"title": "Tabs"' in flat
-    assert "approval pending" in flat
+    # v1.6.0: the tab's own Card carries its pending-approval alert.
+    assert "fix the auth bug" in flat
+    assert "waiting for approval" in flat
 
 
 @pytest.mark.asyncio
@@ -421,33 +418,6 @@ async def test_panel_per_tab_approve_decline_target_that_tabs_session_id(make_ct
     assert {b["on_click"]["params"]["session_id"] for b in per_tab_stops} == {
         live_pending["session_id"], PARKED_ROW["session_id"],
     }
-
-
-@pytest.mark.asyncio
-async def test_panel_approval_section_targets_resolved_session_id(make_ctx, gw_mock):
-    """Consent-staleness fix (c): the single-tab Approval-pending card now
-    passes the TOP-LEVEL resolved session_id explicitly on Approve/Decline,
-    not relying on the gateway's freshest-session resolution."""
-    gw_mock.get(STATUS_PATH, json=_base_status(pending_consent=PENDING))
-    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW]})
-
-    node = await p.coding_remote_control_panel(make_ctx())
-    tree = node.to_dict()
-
-    def find_buttons(n):
-        out = []
-        if isinstance(n, dict):
-            if n.get("type") == "Button":
-                out.append(n["props"])
-            for v in n.values():
-                out.extend(find_buttons(v))
-        elif isinstance(n, list):
-            for v in n:
-                out.extend(find_buttons(v))
-        return out
-
-    approve = [b for b in find_buttons(tree) if b["label"] == "Approve"][0]
-    assert approve["on_click"]["params"]["session_id"] == f"coding-{UID}-abc123"
 
 
 # ─── panels.py: Send form Select for multi-tab ─────────────────────────── #
@@ -493,22 +463,20 @@ async def test_panel_send_form_has_no_select_for_single_tab(make_ctx, gw_mock):
 # ─── single-tab v1.3.2 behavior stays unchanged when tabs fetch is empty ─ #
 
 @pytest.mark.asyncio
-async def test_panel_single_tab_behavior_unchanged_when_no_sessions_route(make_ctx, gw_mock):
-    """No /sessions route mocked at all (fail-soft) — tabs is [], so neither
-    the Tabs section nor the Select appears; the panel renders exactly like
-    v1.3.2 (Session card, Route, Coding mode, plain Send box). The v1.4.1
-    empty-state line must NOT appear here either — the top-level read says
-    Live (running=True), so claiming "no open tabs" would contradict the
-    Session card right above it (see the `not tabs and not running` gate)."""
+async def test_panel_fallback_when_no_sessions_route(make_ctx, gw_mock):
+    """No /sessions route mocked (fail-soft) — tabs is [] but the freshest
+    read says running, so the panel shows the honest "1 active session"
+    summary + an "Active session" fallback card (no target Select with no
+    tabs), and NEVER the fake "Live" stat or a "no sessions" empty state."""
     gw_mock.get(STATUS_PATH, json=_base_status())
 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert '"title": "Tabs"' not in flat
     assert '"type": "Select"' not in flat
-    assert '"value": "Live"' in flat
-    assert "no open tabs" not in flat
+    assert '"value": "Live"' not in flat
+    assert "1 active session" in flat
+    assert "No coding sessions open" not in flat
 
 
 # ─── v1.4.1: status field, row shape, Stop gating, empty state, caption ── #
@@ -533,31 +501,36 @@ def _collect_strings(n) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_panel_tab_row_shows_status_glyph_and_word(make_ctx, gw_mock):
+async def test_panel_tab_cards_show_status_word_and_online_glyph(make_ctx, gw_mock):
+    """v1.6.0: each tab is a Card — the online glyph (● online / ○ offline)
+    is in the card title, the lifecycle word (running/parked/idle) is a
+    colored Stat value inside it."""
     gw_mock.get(STATUS_PATH, json=_base_status())
     gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW, PARKED_ROW, IDLE_ROW]})
 
     node = await p.coding_remote_control_panel(make_ctx())
-    joined = "\n".join(_collect_strings(node.to_dict()))
+    strings = _collect_strings(node.to_dict())
+    joined = "\n".join(strings)
 
-    assert "▶ running" in joined
-    assert "⏸ parked" in joined
-    assert "○ idle" in joined
+    assert "running" in joined and "parked" in joined and "idle" in joined
+    assert any("●" in s for s in strings)  # LIVE_ROW/IDLE_ROW terminal_online
+    assert any("○" in s for s in strings)  # PARKED_ROW offline
 
 
-def test_tab_row_line_shape_is_glyph_label_status_mode():
+def test_tab_card_title_is_glyph_plus_label():
     # _row_to_tab (not a bare CodingTab(**LIVE_ROW)) — it is the one that
-    # renames the gateway's `applied_mode` key to `mode`; constructing the
-    # model directly from the raw row dict would silently drop that field.
+    # renames the gateway's `applied_mode` key to `mode`.
     tab = h._row_to_tab(LIVE_ROW)
-    row = p._tab_row(tab)
-    line = row.to_dict()["props"]["children"][0]["props"]["content"]
-    assert line == "● fix the auth bug · ▶ running · default"
+    card = p._tab_card(tab, enabled=True, allow_autopilot=True)
+    assert card.to_dict()["props"]["title"] == "● fix the auth bug"
 
 
-def test_tab_status_text_falls_back_honestly_when_unknown():
+def test_tab_card_unknown_status_renders_unknown():
+    """A gateway that omits `status` (older contract) -> the tab's status
+    Stat reads "unknown", never guessed from another field."""
     tab = CodingTab(**dict(LIVE_ROW, status=""))
-    assert p._tab_status_text(tab) == "status?"
+    card = p._tab_card(tab, enabled=True, allow_autopilot=True)
+    assert "unknown" in _collect_strings(card.to_dict())
 
 
 @pytest.mark.asyncio
@@ -615,98 +588,33 @@ async def test_panel_running_and_parked_tabs_keep_stop_button(make_ctx, gw_mock)
 
 
 @pytest.mark.asyncio
-async def test_panel_session_card_stop_enabled_when_a_non_freshest_tab_is_parked(make_ctx, gw_mock):
-    """Session-card Stop must be enabled whenever ANY tab is running/parked
-    — not just when the top-level (freshest-session) `running` flag says
-    so. Here the top-level read itself is idle, but a tab is parked."""
-    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
-    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [PARKED_ROW]})
-
-    node = await p.coding_remote_control_panel(make_ctx())
-    tree = node.to_dict()
-
-    def find_by_label(n, label):
-        out = []
-        if isinstance(n, dict):
-            if n.get("type") == "Button" and n.get("props", {}).get("label") == label:
-                out.append(n["props"])
-            for v in n.values():
-                out.extend(find_by_label(v, label))
-        elif isinstance(n, list):
-            for v in n:
-                out.extend(find_by_label(v, label))
-        return out
-
-    # Session-card Stop has no session_id param — filter it out from the
-    # per-tab one, which also matches label "Stop".
-    session_card_stop = [b for b in find_by_label(tree, "Stop")
-                          if not b["on_click"]["params"].get("session_id")][0]
-    assert session_card_stop["disabled"] is False
-
-
-@pytest.mark.asyncio
-async def test_panel_session_card_stop_disabled_when_truly_nothing_running(make_ctx, gw_mock):
-    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
-    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [IDLE_ROW]})
-
-    node = await p.coding_remote_control_panel(make_ctx())
-    tree = node.to_dict()
-
-    def find_by_label(n, label):
-        out = []
-        if isinstance(n, dict):
-            if n.get("type") == "Button" and n.get("props", {}).get("label") == label:
-                out.append(n["props"])
-            for v in n.values():
-                out.extend(find_by_label(v, label))
-        elif isinstance(n, list):
-            for v in n:
-                out.extend(find_by_label(v, label))
-        return out
-
-    session_card_stop = [b for b in find_by_label(tree, "Stop")
-                          if not b["on_click"]["params"].get("session_id")][0]
-    assert session_card_stop["disabled"] is True
-
-
-@pytest.mark.asyncio
-async def test_panel_stop_caption_present_under_session_card(make_ctx, gw_mock):
-    gw_mock.get(STATUS_PATH, json=_base_status())
-    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW]})
-
-    node = await p.coding_remote_control_panel(make_ctx())
-    flat = _flat(node)
-
-    assert "like pressing Esc in the terminal" in flat
-    assert "the session and its history survive" in flat
-
-
-@pytest.mark.asyncio
-async def test_panel_empty_state_line_when_truly_no_tabs_and_not_running(make_ctx, gw_mock):
+async def test_panel_empty_state_when_truly_no_tabs_and_not_running(make_ctx, gw_mock):
     gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
     gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": []})
 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert "no open tabs" in flat
+    assert "No coding sessions open" in flat
     assert "open Webbee Code in a terminal" in flat
-    assert "send an instruction to start one" in flat
-    assert '"title": "Tabs"' not in flat
+    # v1.6.0 review fix: the dead "send an instruction to start one" CTA is
+    # gone — there is no composer in the empty state and send can't bootstrap
+    # a session, so the copy no longer promises it.
+    assert "send an instruction" not in flat
 
 
 @pytest.mark.asyncio
-async def test_panel_no_empty_state_line_when_an_idle_tab_is_open(make_ctx, gw_mock):
-    """An idle tab IS an open tab — the empty-state line must not appear
-    alongside it, even though nothing is "running" at the top level."""
+async def test_panel_no_empty_state_when_an_idle_tab_is_open(make_ctx, gw_mock):
+    """An idle tab IS an open tab (its own card renders) — the empty-state
+    line must not appear alongside it, even with nothing "running"."""
     gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
     gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [IDLE_ROW]})
 
     node = await p.coding_remote_control_panel(make_ctx())
     flat = _flat(node)
 
-    assert "no open tabs" not in flat
-    assert '"title": "Tabs"' in flat
+    assert "No coding sessions open" not in flat
+    assert "scratch terminal" in flat  # IDLE_ROW label renders as its own card
 
 
 # ─── v1.5.0: per-tab coding-mode segment + global section as fallback ──── #
@@ -770,10 +678,13 @@ async def test_panel_parked_tab_has_own_coding_mode_segment(make_ctx, gw_mock):
 
 
 @pytest.mark.asyncio
-async def test_panel_idle_tab_has_no_coding_mode_segment(make_ctx, gw_mock):
-    """An idle tab has no commandable session — no per-tab mode segment,
-    same gate as the per-tab Stop button."""
-    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False))
+async def test_panel_idle_tab_HAS_coding_mode_segment(make_ctx, gw_mock):
+    """v1.6.0 — the redesign's core: an idle tab IS controllable. Its
+    Default/Plan/Autopilot segment renders and is enabled (remote control on)
+    even though nothing is running — the gateway queues the flip for the
+    terminal's next poll. (v1.5.0 hid it; that was the complaint.) Only Stop
+    stays gated on running/parked."""
+    gw_mock.get(STATUS_PATH, json=_base_status())  # remote control enabled, steer=[panel]
     gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [IDLE_ROW]})
 
     node = await p.coding_remote_control_panel(make_ctx())
@@ -781,7 +692,8 @@ async def test_panel_idle_tab_has_no_coding_mode_segment(make_ctx, gw_mock):
 
     idle_mode_btns = [b for b in _coding_mode_buttons_of(tree)
                       if b["on_click"]["params"].get("session_id") == IDLE_ROW["session_id"]]
-    assert idle_mode_btns == []
+    assert {b["on_click"]["params"]["mode"] for b in idle_mode_btns} == {"default", "plan", "autopilot"}
+    assert all(b["disabled"] is False for b in idle_mode_btns)  # enabled + panel steer
 
 
 @pytest.mark.asyncio
@@ -821,18 +733,114 @@ async def test_panel_global_coding_mode_suppressed_when_tabs_present(make_ctx, g
 
 
 @pytest.mark.asyncio
-async def test_panel_global_coding_mode_is_fallback_when_no_tabs(make_ctx, gw_mock):
+async def test_panel_mode_control_reachable_via_fallback_when_no_tabs(make_ctx, gw_mock):
     """Fail-soft fallback: no /sessions route (tabs empty) while the freshest
-    read says running — the global Coding-mode section renders so a mode
-    control is always reachable, with session_id-less (freshest-target)
-    buttons."""
+    read says running — the "Active session" fallback card renders a
+    session_id-less (freshest-target) mode segment so a mode control is
+    always reachable even when the inventory is momentarily unavailable."""
     gw_mock.get(STATUS_PATH, json=_base_status())
     # SESSIONS_PATH deliberately NOT registered -> tabs == []
 
     node = await p.coding_remote_control_panel(make_ctx())
     tree = node.to_dict()
 
-    assert '"title": "Coding mode"' in _flat(node)
+    assert '"title": "Active session"' in _flat(node)
     global_btns = [b for b in _coding_mode_buttons_of(tree)
                    if not b["on_click"]["params"].get("session_id")]
     assert {b["label"] for b in global_btns} == {"Default", "Plan", "Autopilot"}
+
+
+# ─── v1.6.0 review-fix coverage (adversarial review 2026-07-20) ────────── #
+
+@pytest.mark.asyncio
+async def test_panel_autopilot_disabled_when_panel_not_in_steer(make_ctx, gw_mock):
+    """Route=Telegram (panel NOT in steer): the per-tab Autopilot button is
+    disabled (the gateway 403s panel-origin autopilot without panel steer),
+    Default/Plan stay enabled, and the explanatory caption renders — never
+    offer a click that will 403."""
+    gw_mock.get(STATUS_PATH, json=_base_status(state={"enabled": True, "mirror": ["telegram"], "steer": ["telegram"]}))
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [LIVE_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    by_mode = {b["on_click"]["params"]["mode"]: b["disabled"] for b in _coding_mode_buttons_of(tree)
+               if b["on_click"]["params"].get("session_id") == LIVE_ROW["session_id"]}
+    assert by_mode == {"default": False, "plan": False, "autopilot": True}
+    assert "Autopilot from the panel needs Panel or Both routing" in _flat(node)
+
+
+@pytest.mark.asyncio
+async def test_panel_tab_mode_disabled_when_remote_off(make_ctx, gw_mock):
+    """Remote control OFF + an open tab: the tab's mode segment renders but is
+    disabled (a mode flip needs remote control on), and the card explains why."""
+    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=False,
+                state={"enabled": False, "mirror": [], "steer": []}))
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [IDLE_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    idle_mode = [b for b in _coding_mode_buttons_of(tree)
+                 if b["on_click"]["params"].get("session_id") == IDLE_ROW["session_id"]]
+    assert idle_mode and all(b["disabled"] is True for b in idle_mode)
+    assert "turn on remote control above" in _flat(node)
+
+
+def test_summary_line_counts_by_status():
+    """_summary_line (complaint #1's actual fix) counts honestly by lifecycle
+    with correct pluralization — the header no longer fakes a single 'Live'."""
+    tabs = [h._row_to_tab(dict(LIVE_ROW, session_id="a")),      # running
+            h._row_to_tab(dict(PARKED_ROW, session_id="b")),    # parked
+            h._row_to_tab(dict(IDLE_ROW, session_id="c")),      # idle
+            h._row_to_tab(dict(IDLE_ROW, session_id="d"))]      # idle
+    assert p._summary_line(tabs) == "4 tabs · 1 running · 1 parked · 2 idle"
+    assert p._summary_line([h._row_to_tab(LIVE_ROW)]) == "1 tab · 1 running"
+    assert p._summary_line([]) == "No coding sessions open"
+
+
+@pytest.mark.asyncio
+async def test_panel_two_tabs_independent_pending_target_own_session(make_ctx, gw_mock):
+    """The redesign's 'each tab answered independently' promise: two tabs each
+    with its OWN pending approval — both Approve AND Decline target that tab's
+    own session_id (never the wrong session)."""
+    p1 = {"req_id": "r1", "tool": "run_shell", "summary": "rm a", "since": "x"}
+    p2 = {"req_id": "r2", "tool": "run_shell", "summary": "rm b", "since": "x"}
+    row_a = dict(LIVE_ROW, session_id="coding-A", pending_consent=p1)
+    row_b = dict(PARKED_ROW, session_id="coding-B", pending_consent=p2)
+    gw_mock.get(STATUS_PATH, json=_base_status())
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [row_a, row_b]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    approve = {b["on_click"]["params"].get("session_id") for b in _all_buttons(tree) if b["label"] == "Approve"}
+    decline = {b["on_click"]["params"].get("session_id") for b in _all_buttons(tree) if b["label"] == "Decline"}
+    assert approve == {"coding-A", "coding-B"}
+    assert decline == {"coding-A", "coding-B"}
+
+
+@pytest.mark.asyncio
+async def test_panel_parked_only_header_not_green(make_ctx, gw_mock):
+    """A parked-only account (a parked tab, nothing running) must NOT show a
+    green header stat — parked ≠ live (matches the yellow per-tab pill)."""
+    gw_mock.get(STATUS_PATH, json=_base_status(active=False, running=True))
+    gw_mock.get(SESSIONS_PATH, json={"user_id": UID, "sessions": [PARKED_ROW]})
+
+    node = await p.coding_remote_control_panel(make_ctx())
+    tree = node.to_dict()
+
+    def find_stats(n):
+        out = []
+        if isinstance(n, dict):
+            if n.get("type") == "Stat":
+                out.append(n["props"])
+            for v in n.values():
+                out.extend(find_stats(v))
+        elif isinstance(n, list):
+            for v in n:
+                out.extend(find_stats(v))
+        return out
+
+    header_stat = [s for s in find_stats(tree) if s.get("label") == "Coding sessions"][0]
+    assert header_stat["color"] != "green"
