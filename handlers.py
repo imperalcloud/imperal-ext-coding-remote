@@ -111,7 +111,8 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
             data=CodingRemote(active=active, session_id=d.get("session_id"),
                               enabled=st.get("enabled", False), mirror=st.get("mirror", []), steer=st.get("steer", []),
                               checked_at=_utc_now_iso(), running=running, mode=d.get("applied_mode"),
-                              last_seen=d.get("last_seen"), pending_consent=d.get("pending_consent")),
+                              last_seen=d.get("last_seen"), pending_consent=d.get("pending_consent"),
+                              requested_mode=d.get("requested_mode")),
             summary=f"coding session {state_word}; remote {'on' if st.get('enabled') else 'off'}")
     except Exception as e:
         return ActionResult.error(f"Failed to read coding-remote status: {_safe_err(e)}", code="CODING_REMOTE_STATUS_FAILED")

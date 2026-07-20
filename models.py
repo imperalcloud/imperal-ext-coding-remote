@@ -52,6 +52,7 @@ class CodingRemote(sdl.Entity):
     mode: str | None = None
     last_seen: int | None = None  # epoch seconds (gateway pointer TTL truth) — v1.3.1: was mistyped str, ValidationError whenever the terminal was ONLINE
     pending_consent: dict | None = None
+    requested_mode: str | None = None  # v1.3.2: gateway's non-destructive peek of a NOT-YET-APPLIED remote mode request — the panel renders «(applying…)» until the terminal's next check-in pops it
 
     @model_validator(mode="before")
     @classmethod

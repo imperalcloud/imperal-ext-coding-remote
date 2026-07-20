@@ -2,7 +2,7 @@
   "manifest_schema_version": 3,
   "sdk_version": "5.9.12",
   "app_id": "coding-remote",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "name": "Coding Remote",
   "description": "Control your terminal Webbee Code session remotely — mirror it to Telegram or the panel and steer it back.",
   "icon": "icon.svg",
@@ -216,6 +216,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [
@@ -444,6 +456,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [
@@ -672,6 +696,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [
@@ -891,6 +927,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [
@@ -1119,6 +1167,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [
@@ -1347,6 +1407,18 @@
             ],
             "default": null,
             "title": "Pending Consent"
+          },
+          "requested_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requested Mode"
           }
         },
         "required": [

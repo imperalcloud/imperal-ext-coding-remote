@@ -43,7 +43,8 @@ def _route_buttons(current_mode: str) -> ui.Stack:
     ])
 
 
-def _coding_mode_buttons(running: bool, applied_mode: str | None) -> ui.Stack:
+def _coding_mode_buttons(running: bool, applied_mode: str | None,
+                         requested_mode: str | None = None) -> ui.Stack:
     # Segmented control: each button requests that mode for the session via
     # set_coding_mode (same single code path as the chat tool). Disabled
     # while no session is running at all — a mode flip is a command to a
@@ -55,8 +56,9 @@ def _coding_mode_buttons(running: bool, applied_mode: str | None) -> ui.Stack:
     # confirm at the terminal before it takes effect.
     return ui.Stack(direction="h", gap=1, children=[
         ui.Button(
-            label=label,
-            variant="primary" if code == applied_mode else "secondary",
+            label=(f"{label} (applying…)" if requested_mode and code == requested_mode
+                   and requested_mode != applied_mode else label),
+            variant="primary" if code == (requested_mode or applied_mode) else "secondary",
             disabled=not running,
             on_click=ui.Call("set_coding_mode", mode=code),
         )
@@ -196,8 +198,9 @@ async def coding_remote_control_panel(ctx, **kwargs):
     if running and not active and data.last_seen and _ago(data.last_seen):
         kv_items.insert(0, {"key": "Terminal", "value": f"last seen {_ago(data.last_seen)}"})
 
-    coding_mode_children = [_coding_mode_buttons(running, applied_mode)]
-    if running and applied_mode is None:
+    requested_mode = getattr(data, "requested_mode", None)
+    coding_mode_children = [_coding_mode_buttons(running, applied_mode, requested_mode)]
+    if running and applied_mode is None and requested_mode is None:
         coding_mode_children.append(
             ui.Text(content="mode unknown — terminal hasn't reported yet", variant="caption"))
 

@@ -457,3 +457,15 @@ def test_panel_last_seen_humanized(monkeypatch):
     assert panels._ago(1784545769) == "3m ago"
     assert panels._ago("garbage") == ""
     assert panels._ago(1784545769 + 500) == "just now"  # future/skew clamps to 0
+
+
+def test_panel_requested_mode_renders_applying_suffix():
+    """v1.3.2: a remote mode request not yet ACK'd by the terminal highlights
+    the REQUESTED button with an «(applying…)» suffix — never a silent
+    nothing between the click and the terminal's next check-in."""
+    import json
+    import panels
+    stack = panels._coding_mode_buttons(True, "default", "plan")
+    flat = json.dumps(stack.to_dict() if hasattr(stack, "to_dict") else stack.__dict__, default=lambda o: o.__dict__)
+    assert "applying" in flat
+    assert flat.count("primary") == 1  # the requested one, not the applied one
