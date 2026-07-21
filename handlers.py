@@ -268,6 +268,13 @@ async def fn_stop(ctx, params: StopParams) -> ActionResult:
     cancel. When nothing is running the gateway refuses with an honest no-op
     reason (surfaced as-is, no internal URL/host ever leaked).
 
+    Origin-honest (v1.8.0, Front C gateway 2026-07-21): /stop now gates on
+    the per-surface steer allowlist (``_StopIn.surface``) — the acting
+    turn's TRUE surface (normalized, see :func:`_turn_surface`) rides along
+    exactly like :func:`fn_send`/:func:`fn_coding_mode` already do, so a
+    Telegram-originated stop is judged against the Telegram grant instead
+    of the gateway's web-panel default. Omitted when unreadable.
+
     Targeted (T2, W4c 2026-07-20): ``params.session_id`` — when non-empty —
     stops that ONE tab instead of the gateway's own freshest-session pick;
     omitted (the default) is byte-identical to pre-T2 behavior (empty body).
@@ -275,6 +282,9 @@ async def fn_stop(ctx, params: StopParams) -> ActionResult:
     try:
         uid = _user_id(ctx)
         body: dict = {"session_id": params.session_id} if params.session_id else {}
+        surface = _turn_surface(ctx)
+        if surface:
+            body["surface"] = surface
         res, err = await gw_post(f"/v1/internal/coding-remote/{uid}/stop", body)
         if err:
             return ActionResult.error(f"Not stopped: {err}", code="CODING_REMOTE_STOP_FAILED")

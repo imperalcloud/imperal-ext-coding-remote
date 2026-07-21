@@ -2,7 +2,7 @@
   "manifest_schema_version": 3,
   "sdk_version": "5.9.12",
   "app_id": "coding-remote",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "name": "Coding Remote",
   "description": "Control your terminal Webbee Code session remotely — mirror it to Telegram or the panel and steer it back.",
   "icon": "icon.svg",

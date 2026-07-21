@@ -120,6 +120,16 @@ def _tab_card(tab, enabled: bool, allow_autopilot: bool) -> ui.Card:
     even when idle); Stop only while running/parked (idle has nothing to
     stop); Approve/Decline only when THIS tab has its own pending approval (a
     multi-tab user can have several waiting, each answered independently)."""
+    # Per-tab truth (v1.8.0, Front C 2026-07-21): the row carries its OWN
+    # enabled/steer (route-per-tab) — gate THIS card on them, falling back to
+    # the account values only when an older gateway omits the fields. With
+    # the account default now steer-EMPTY (mirror-out default-on), the old
+    # account-level gates would grey Autopilot on a tab whose owner
+    # explicitly granted Panel, and per-tab Off would not disarm its card.
+    if tab.enabled is not None:
+        enabled = bool(tab.enabled)
+    if tab.steer is not None:
+        allow_autopilot = "panel" in (tab.steer or [])
     glyph = "●" if tab.terminal_online else "○"
     status_word = _STATUS_GLYPH_WORD.get(tab.status, tab.status or "unknown")
     commandable = tab.status in ("running", "parked")
@@ -236,6 +246,14 @@ async def coding_remote_control_panel(ctx, **kwargs):
     if not enabled:
         header_children.append(ui.Text(
             content="Remote control is off — pick a surface above to steer your tabs from here",
+            variant="caption"))
+    elif not (data.steer or []):
+        # Front C default (v1.8.0): mirror-out is on for everyone, steering
+        # is opt-in per surface — this shape matches no route preset, so say
+        # it instead of showing an unhighlighted row with no explanation.
+        header_children.append(ui.Text(
+            content="Mirror-only (the default) — sessions echo to your surfaces; "
+                    "pick a surface above to let it steer back",
             variant="caption"))
     elif (tabs or data.running) and not allow_autopilot:
         # Fires for the fallback path too (a running session with no tab
