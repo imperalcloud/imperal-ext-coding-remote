@@ -180,6 +180,7 @@ async def fn_status(ctx, params: EmptyParams) -> ActionResult:
 
 
 @chat.function("set_mode", action_type="write", event="coding-remote.route_changed",
+    effects=["update:coding_remote_route"],
     description="Route the terminal coding session: tg (Telegram), panel, both, or off.",
     data_model=CodingRemote)
 async def fn_set(ctx, params: SetParams) -> ActionResult:
@@ -217,6 +218,7 @@ async def fn_set(ctx, params: SetParams) -> ActionResult:
 
 
 @chat.function("send_instruction", action_type="write", event="coding-remote.instruction_sent",
+    effects=["create:coding_remote_instruction"],
     description="Send an instruction to the live terminal coding session (it keeps running on your machine).",
     data_model=CodingRemote)
 async def fn_send(ctx, params: SendParams) -> ActionResult:
@@ -256,6 +258,7 @@ async def fn_send(ctx, params: SendParams) -> ActionResult:
 
 
 @chat.function("stop_session", action_type="write", event="coding-remote.stopped",
+    effects=["update:coding_remote_session"],
     description="Stop the running terminal coding session (like pressing Esc in the terminal).",
     data_model=CodingRemote)
 async def fn_stop(ctx, params: StopParams) -> ActionResult:
@@ -295,6 +298,7 @@ async def fn_stop(ctx, params: StopParams) -> ActionResult:
 
 
 @chat.function("set_coding_mode", action_type="write", event="coding-remote.coding_mode_changed",
+    effects=["update:coding_remote_mode"],
     description="Set the terminal coding session's mode: default (ask before risky actions), plan (read-only planning), or autopilot (auto-approve — the terminal will ask you to confirm the switch).",
     data_model=CodingRemote)
 async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
@@ -350,6 +354,7 @@ async def fn_coding_mode(ctx, params: CodingModeParams) -> ActionResult:
 
 
 @chat.function("reply_consent", action_type="write", event="coding-remote.consent_replied",
+    effects=["update:coding_remote_consent"],
     description="Reply to a pending approval waiting on the terminal coding session (e.g. approve or decline).",
     data_model=CodingRemote)
 async def fn_reply_consent(ctx, params: ConsentParams) -> ActionResult:

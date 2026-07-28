@@ -1,6 +1,6 @@
 {
   "manifest_schema_version": 3,
-  "sdk_version": "5.9.12",
+  "sdk_version": "5.9.13",
   "app_id": "coding-remote",
   "version": "1.8.1",
   "name": "Coding Remote",
@@ -8,7 +8,6 @@
   "icon": "icon.svg",
   "actions_explicit": true,
   "system": true,
-  "category": "system",
   "capabilities": [
     "coding_remote:read",
     "coding_remote:write"
@@ -396,7 +395,9 @@
       "description": "Route the terminal coding session: tg (Telegram), panel, both, or off.",
       "action_type": "write",
       "chain_callable": true,
-      "effects": [],
+      "effects": [
+        "update:coding_remote_route"
+      ],
       "id_projection": "",
       "params_schema": {
         "description": "Route the terminal coding session. mode: tg | panel | both | off.",
@@ -788,7 +789,9 @@
       "description": "Send an instruction to the live terminal coding session (it keeps running on your machine).",
       "action_type": "write",
       "chain_callable": true,
-      "effects": [],
+      "effects": [
+        "create:coding_remote_instruction"
+      ],
       "id_projection": "",
       "params_schema": {
         "description": "Send an instruction to the live coding session.",
@@ -1180,7 +1183,9 @@
       "description": "Stop the running terminal coding session (like pressing Esc in the terminal).",
       "action_type": "write",
       "chain_callable": true,
-      "effects": [],
+      "effects": [
+        "update:coding_remote_session"
+      ],
       "id_projection": "",
       "params_schema": {
         "description": "Stop the running terminal coding session (like pressing Esc).",
@@ -1564,7 +1569,9 @@
       "description": "Set the terminal coding session's mode: default (ask before risky actions), plan (read-only planning), or autopilot (auto-approve — the terminal will ask you to confirm the switch).",
       "action_type": "write",
       "chain_callable": true,
-      "effects": [],
+      "effects": [
+        "update:coding_remote_mode"
+      ],
       "id_projection": "",
       "params_schema": {
         "description": "Set the terminal coding session's mode. mode: default | plan | autopilot.",
@@ -1956,7 +1963,9 @@
       "description": "Reply to a pending approval waiting on the terminal coding session (e.g. approve or decline).",
       "action_type": "write",
       "chain_callable": true,
-      "effects": [],
+      "effects": [
+        "update:coding_remote_consent"
+      ],
       "id_projection": "",
       "params_schema": {
         "description": "Reply to a pending approval waiting on the terminal coding session.",
@@ -2363,5 +2372,6 @@
       "refresh": "interval:5s",
       "center_overlay": false
     }
-  ]
+  ],
+  "category": "system"
 }
