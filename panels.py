@@ -16,6 +16,7 @@ route-per-tab.
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from imperal_sdk import ui
@@ -32,6 +33,52 @@ _MODE_LABELS = {"tg": "Telegram", "panel": "Panel", "both": "Both", "off": "Off"
 _CODING_MODE_LABELS = {"default": "Default", "plan": "Plan", "autopilot": "Autopilot"}
 _STATUS_GLYPH_WORD = {"running": "running", "parked": "parked", "idle": "idle"}
 _STATUS_COLOR = {"running": "green", "parked": "yellow", "idle": "gray"}
+
+# Panel reply budget — I7.
+#
+# The kernel caps a fast-RPC reply at 256KB (REPLY_PAYLOAD_MAX_BYTES in
+# imperal_kernel/rpc/stream_consumer.py). Past that the reply is NOT trimmed:
+# it is REPLACED by a typed error carrying no ui, so the panel host marks the
+# slot missing and renders NOTHING for it -- not even a spinner. The panel
+# would simply DISAPPEAR (exactly how the automations sidebar died at ~70
+# rules, v1.10.3, and File Reader at ~500 files, v0.3.5).
+#
+# A tab card costs ~2.2KB on the wire (status stat + mode segment + route +
+# actions), so an unbounded card-per-tab list crossed the cap at ~126 tabs.
+# Long-lived terminals accumulate idle tabs, so this is reachable in normal
+# use -- and losing this panel means losing the ONLY way to answer a pending
+# approval from the panel.
+_TAB_CARD_BUDGET_BYTES = 150_000
+
+# Hard cap on the "target tab" dropdown in the send composer. It rides in the
+# same reply as the cards, and a dropdown with hundreds of entries is unusable
+# long before it is expensive -- so this is a usability bound as much as a
+# size one. Ordered like the cards, so the likely targets stay addressable.
+_TARGET_OPTIONS_MAX = 50
+
+
+def _most_important_first(tabs: list) -> list:
+    """Order tabs so the ones that NEED the user come first — I7.
+
+    The card list is bounded by a byte budget, so ordering decides what
+    survives truncation. Priority is by consequence of losing the card:
+
+      0. a tab with a pending approval  — this panel is the only place it
+         can be answered; dropping it would strand the session forever;
+      1. running   — a live turn the user may need to stop;
+      2. parked    — a real session whose terminal is offline;
+      3. idle/other— an open terminal doing nothing.
+
+    Ties break on session_id so the order is stable between refreshes and
+    cards don't jump around while the user is reading them.
+    """
+    def key(t) -> tuple:
+        if getattr(t, "pending_consent", None):
+            rank = 0
+        else:
+            rank = {"running": 1, "parked": 2}.get(getattr(t, "status", "") or "", 3)
+        return (rank, str(getattr(t, "session_id", "") or ""))
+    return sorted(tabs, key=key)
 
 
 def _route_buttons(current_mode: str, session_id: str | None = None) -> ui.Stack:
@@ -267,8 +314,31 @@ async def coding_remote_control_panel(ctx, **kwargs):
     children = [ui.Card(title="Coding sessions", content=ui.Stack(direction="v", gap=2, children=header_children))]
 
     # ── One card per tab (full control, always visible) ───────────────── #
-    for tab in tabs:
-        children.append(_tab_card(tab, enabled, allow_autopilot))
+    # Bounded by a byte budget — I7 (see _TAB_CARD_BUDGET_BYTES). Cards are
+    # emitted most-important-first, so if the budget truncates, what is lost
+    # is idle tabs -- never a pending approval or a running session.
+    _shown_tabs = 0
+    _used = 0
+    for tab in _most_important_first(tabs):
+        card = _tab_card(tab, enabled, allow_autopilot)
+        try:
+            cost = len(json.dumps(card.to_dict(), ensure_ascii=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            cost = 2_400  # unmeasurable card: assume a typical one
+        if _shown_tabs and _used + cost > _TAB_CARD_BUDGET_BYTES:
+            break
+        children.append(card)
+        _used += cost
+        _shown_tabs += 1
+
+    _hidden_tabs = len(tabs) - _shown_tabs
+    if _hidden_tabs > 0:
+        # Never drop rows silently: say what is missing and why it is safe.
+        children.append(ui.Text(
+            content=(f"{_hidden_tabs} more idle session"
+                     f"{'s' if _hidden_tabs != 1 else ''} not shown "
+                     "(sessions needing you are listed first)."),
+            variant="caption"))
 
     # Fallback: the per-tab inventory failed soft (empty) while the freshest
     # read still says a session is running — never leave the user with no
@@ -296,8 +366,13 @@ async def coding_remote_control_panel(ctx, **kwargs):
     if enabled and (tabs or data.running):
         send_children = [ui.Input(placeholder="Type an instruction for your coding session…", param_name="text")]
         if len(tabs) > 1:
+            # Bounded like the card list — I7. One option is small (~100B) but
+            # unbounded is still unbounded, and this Select rides in the SAME
+            # reply as the cards. Same ordering, so the sessions a user is
+            # most likely to target stay addressable.
+            _opt_tabs = _most_important_first(tabs)[:_TARGET_OPTIONS_MAX]
             send_children.append(ui.Select(
-                options=[{"value": t.session_id, "label": _tab_label(t)} for t in tabs],
+                options=[{"value": t.session_id, "label": _tab_label(t)} for t in _opt_tabs],
                 param_name="session_id",
                 placeholder="Target tab (defaults to the most recently active)",
             ))
